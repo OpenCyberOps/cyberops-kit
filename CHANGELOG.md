@@ -40,12 +40,13 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 - **Public scoring methodology** at `docs/methodology/scoring.md`, including known
   limitations (INV-7).
 - **Invariant test suite** covering INV-1 through INV-7 and all six seams.
+- **Every GitHub Action pinned to a full commit SHA**, with the version kept as a
+  trailing comment. Our own SLSA evaluator reported 19 `slsa-unpinned-action`
+  findings against us on the first self-scan; this brings that to zero and flips the
+  `pinned-build-dependencies` evidence check to passing.
 
 ### Known issues
 
-- GitHub Actions in our own workflows are pinned to tags rather than commit SHAs.
-  Tracked in [`.github/workflows/README.md`](.github/workflows/README.md); our own
-  SLSA evaluator reports this against us.
 - SBOM component freshness is not measured; the sub-metric is excluded from
   `sbom_health` rather than assumed healthy.
 - Semgrep's `--config=auto` ruleset is not pinned, so static analysis scores can
