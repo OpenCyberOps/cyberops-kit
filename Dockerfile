@@ -14,7 +14,7 @@ RUN go install github.com/google/osv-scanner/cmd/osv-scanner@latest \
 FROM anchore/syft:latest AS syft
 FROM aquasec/trivy:latest AS trivy
 
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 LABEL org.opencontainers.image.title="CyberOps Kit" \
       org.opencontainers.image.description="Reproducible, auditable security report cards." \
