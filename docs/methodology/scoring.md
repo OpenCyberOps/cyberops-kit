@@ -76,9 +76,9 @@ weights states them.
 
 ## Excluded dimensions
 
-**A missing scanner is never scored as zero.** If a scanner did not run — not
-installed, skipped under `--offline`, timed out, or not applicable to the detected
-stack — its dimension is *excluded*. Its weight is redistributed proportionally
+**A missing scanner is never scored as zero.** If a scanner produced no data — not
+installed, disabled under `--offline`, not applicable to the detected stack, crashed,
+or timed out — its dimension is *excluded*. Its weight is redistributed proportionally
 across the dimensions that do have data, and the exclusion is stated explicitly in
 every report.
 
@@ -88,6 +88,22 @@ becomes an effective 33.3 rather than 25.
 
 Scoring an absent scanner as a failure would be dishonest, and would punish projects
 for our tooling gaps rather than for their security posture.
+
+### Not run is not the same as failed
+
+Every excluded scanner is reported with an `outcome`:
+
+| Outcome | Meaning | Is it a problem? |
+|---|---|---|
+| `not_run` | Not installed, disabled by `--offline`, or not applicable | No — expected |
+| `failed` | The scanner ran and exited unexpectedly | **Yes** |
+| `timed_out` | The scanner exceeded its time budget | **Yes** |
+
+All three exclude a dimension identically, so the *score* does not distinguish them.
+The *report* does, prominently, and so does the CLI. A scanner that crashed and a
+scanner that was never installed cost the run the same points, but only one of them
+means something is broken — and presenting both as "skipped" is how a real failure
+goes unnoticed.
 
 ### Coverage, and when there is no grade at all
 

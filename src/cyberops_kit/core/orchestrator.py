@@ -34,6 +34,8 @@ from cyberops_kit.core.enrichment import run_enrichment
 from cyberops_kit.core.ingest import git_version
 from cyberops_kit.core.models import (
     DimensionKey,
+    ExcludedScanner,
+    ExclusionOutcome,
     Finding,
     ProjectProfile,
     Report,
@@ -41,7 +43,6 @@ from cyberops_kit.core.models import (
     RunContext,
     RunMetadata,
     SBOMSummary,
-    SkippedScanner,
     SLSAAssessment,
     Target,
 )
@@ -124,7 +125,7 @@ class Pipeline:
                 slsa=slsa,
                 score=score,
                 scoring_model_version=SCORING_MODEL_VERSION,
-                skipped_scanners=self._skipped(scan_results),
+                excluded_scanners=self._excluded(scan_results),
             ),
             run_metadata=RunMetadata(
                 run_id=run_id,
@@ -309,18 +310,29 @@ class Pipeline:
         )
 
     @staticmethod
-    def _skipped(results: dict[str, ScanResult]) -> list[SkippedScanner]:
-        """List every scanner that did not complete, with its reason.
+    def _excluded(results: dict[str, ScanResult]) -> list[ExcludedScanner]:
+        """List every scanner that produced no data, with why.
+
+        The mapping below is the point: a scanner that was never installed and a
+        scanner that crashed both cost the run a dimension, but only one of them is a
+        problem. Reports and the CLI present them differently on the strength of this
+        field.
 
         Args:
             results: All scan results.
 
         Returns:
-            Skipped scanners, sorted by name for deterministic output.
+            Excluded scanners, sorted by name for deterministic output.
         """
+        outcomes = {
+            ScanOutcome.SKIPPED: ExclusionOutcome.NOT_RUN,
+            ScanOutcome.FAILED: ExclusionOutcome.FAILED,
+            ScanOutcome.TIMED_OUT: ExclusionOutcome.TIMED_OUT,
+        }
         return [
-            SkippedScanner(
+            ExcludedScanner(
                 name=result.scanner,
+                outcome=outcomes[result.outcome],
                 reason=result.reason or result.outcome.value,
                 detail=result.detail,
             )

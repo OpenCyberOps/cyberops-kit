@@ -633,13 +633,43 @@ class Score(BaseModel):
 # --- Output envelope -----------------------------------------------------------
 
 
-class SkippedScanner(BaseModel):
-    """A scanner that did not run, and why. Always surfaced in the report."""
+class ExclusionOutcome(StrEnum):
+    """Why a scanner contributed no data to the run.
+
+    The distinction is the whole point of this enum, so it is worth stating plainly:
+
+    ``NOT_RUN`` is benign and expected. The tool is not installed, ``--offline``
+    forbade it, or it did not apply to this project. Nothing is wrong.
+
+    ``FAILED`` and ``TIMED_OUT`` mean the scanner *ran and something went wrong*.
+    That is a problem somebody should act on.
+
+    Collapsing these into one word — as an earlier version of this model did, calling
+    everything "skipped" — hides real failures behind reassuring language. A scanner
+    that crashed and a scanner that was never installed both remove a dimension from
+    the score, but only one of them is a bug.
+    """
+
+    NOT_RUN = "not_run"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+
+    @property
+    def is_failure(self) -> bool:
+        """Return whether this outcome represents something that went wrong."""
+        return self is not ExclusionOutcome.NOT_RUN
+
+
+class ExcludedScanner(BaseModel):
+    """A scanner that produced no data, and why. Always surfaced in the report."""
 
     model_config = ConfigDict(frozen=True)
 
     name: str
+    outcome: ExclusionOutcome
     reason: str
+    """Machine-readable cause, e.g. ``not_installed``, ``offline``, ``timeout``."""
+
     detail: str | None = None
 
 
@@ -660,13 +690,23 @@ class Results(BaseModel):
     slsa: SLSAAssessment = Field(default_factory=SLSAAssessment)
     score: Score
     scoring_model_version: str
-    skipped_scanners: list[SkippedScanner] = Field(default_factory=list)
+    excluded_scanners: list[ExcludedScanner] = Field(default_factory=list)
 
     @field_validator("findings")
     @classmethod
     def _canonically_ordered(cls, value: list[Finding]) -> list[Finding]:
         """Enforce canonical finding order at the envelope boundary (INV-3)."""
         return sort_findings(value)
+
+    @property
+    def failed_scanners(self) -> list[ExcludedScanner]:
+        """Return scanners that ran and broke, as opposed to never running."""
+        return [s for s in self.excluded_scanners if s.outcome.is_failure]
+
+    @property
+    def not_run_scanners(self) -> list[ExcludedScanner]:
+        """Return scanners that were never invoked, for a benign, expected reason."""
+        return [s for s in self.excluded_scanners if not s.outcome.is_failure]
 
 
 class RunMetadata(BaseModel):

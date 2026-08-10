@@ -58,8 +58,10 @@ of them:
 docker run --rm -v "$PWD:/workspace" ghcr.io/opencyberops/cyberops-kit scan /workspace
 ```
 
-Any scanner you do not have installed is reported as skipped, and the dimension it
-feeds is excluded from the score rather than counted as a failure.
+Any scanner you do not have installed is reported as **not run**, and the dimension
+it feeds is excluded from the score rather than counted as a failure. A scanner that
+*ran and broke* — crashed, or exceeded its timeout — is reported separately as
+**failed**, because that is a problem to investigate rather than an expected gap.
 
 ---
 

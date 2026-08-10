@@ -22,6 +22,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 - **Deterministic scoring model** (`SCORING_MODEL_VERSION 1.0.0`) with six weighted
   dimensions, grade bands, three hard caps, and proportional weight redistribution
   for excluded dimensions.
+- **Excluded scanners distinguish `not_run` from `failed` and `timed_out`.** A
+  scanner that was never installed and one that crashed both cost the run a
+  dimension, but only one is a bug; reporting both as "skipped" let two real CI
+  timeouts hide behind benign-sounding language. `Results.excluded_scanners`
+  (formerly `skipped_scanners`) now carries an `outcome`, and the CLI, Markdown,
+  HTML and PR comment surface failures separately and prominently.
 - **Coverage reporting**: runs that could evaluate less than half the scoring model
   report `NOT SCORED` rather than a misleading grade, and do not fail `--fail-below`.
 - **Report renderers**: JSON, SARIF 2.1.0, Markdown, HTML, shields.io badge, and PR

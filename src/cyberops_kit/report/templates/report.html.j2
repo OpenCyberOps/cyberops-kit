@@ -217,21 +217,47 @@ missing scanner is never scored as a failure.</p>
 {% endfor %}
 {% endif %}
 
-{% if results.skipped_scanners %}
+{% if results.failed_scanners %}
+<h2 class="sev sev-high">Scanners that failed</h2>
+<p class="disclaimer">These scanners <strong>ran and broke</strong>. Unlike a scanner
+that is simply not installed, this is a problem worth investigating — the dimensions
+below are missing because something went wrong, not because there was nothing to
+measure.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Scanner</th><th>Outcome</th><th>Reason</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for scanner in results.failed_scanners %}
+    <tr><td><code>{{ scanner.name }}</code></td>
+        <td class="sev sev-high">{{ scanner.outcome.value }}</td>
+        <td>{{ scanner.reason }}</td>
+        <td>{{ scanner.detail or '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if results.not_run_scanners %}
 <h2>Scanners that did not run</h2>
+<p class="disclaimer">Expected and benign: not installed, disabled, or not applicable
+to this project.</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Scanner</th><th>Reason</th><th>Detail</th></tr></thead>
   <tbody>
-  {% for scanner in results.skipped_scanners %}
+  {% for scanner in results.not_run_scanners %}
     <tr><td><code>{{ scanner.name }}</code></td><td>{{ scanner.reason }}</td>
         <td>{{ scanner.detail or '' }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
-<p class="disclaimer">Dimensions fed by these scanners were excluded from the score,
-not scored as zero.</p>
+{% endif %}
+
+{% if results.excluded_scanners %}
+<p class="disclaimer">Dimensions fed by the scanners above were excluded from the
+score, not scored as zero.</p>
 {% endif %}
 
 <footer>

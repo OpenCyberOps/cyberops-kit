@@ -305,15 +305,53 @@ def _print_summary(report: Report, written: dict[str, Path], *, quiet: bool) -> 
                 err=True,
             )
 
-    if report.results.skipped_scanners:
-        names = ", ".join(s.name for s in report.results.skipped_scanners)
-        typer.echo(f"\n  scanners skipped: {names}")
+    # A scanner that was never installed and a scanner that crashed both cost the run
+    # a dimension, but only one of them is a problem. Printing one word for both is
+    # how a real failure gets mistaken for an expected gap.
+    failed = report.results.failed_scanners
+    not_run = report.results.not_run_scanners
+
+    if failed:
+        typer.secho(
+            f"\n  {len(failed)} scanner(s) FAILED — these ran and broke:",
+            fg=typer.colors.RED,
+            bold=True,
+            err=True,
+        )
+        for scanner in failed:
+            typer.secho(
+                f"    {scanner.name} ({scanner.reason}): {_trim(scanner.detail)}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+
+    if not_run:
+        names = ", ".join(f"{s.name} ({s.reason})" for s in not_run)
+        typer.echo(f"\n  scanners not run: {names}")
+
+    if failed or not_run:
         typer.echo("  their dimensions were excluded from the score, not scored as zero")
 
     typer.echo("")
     for fmt, path in written.items():
         typer.echo(f"  {fmt:<10} {path}")
     typer.echo("")
+
+
+def _trim(detail: str | None, limit: int = 140) -> str:
+    """Condense a scanner failure detail to one readable line.
+
+    Args:
+        detail: The scanner's error text, possibly multi-line.
+        limit: Maximum characters to show.
+
+    Returns:
+        A single-line summary, truncated with an ellipsis.
+    """
+    if not detail:
+        return "no detail reported"
+    flat = " ".join(detail.split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
 def _fail(exc: CyberOpsError) -> None:

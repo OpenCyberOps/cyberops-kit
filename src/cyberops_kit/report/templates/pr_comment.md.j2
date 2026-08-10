@@ -58,8 +58,8 @@ are still accurate; the composite is not comparable to a full run.
 | `{{ key.value }}` | {{ '%.0f' | format(dimension.value) }} | {{ '%.1f' | format(dimension.effective_weight) }} |
 {% endif -%}
 {% endfor %}
-{% if results.skipped_scanners %}
-**Scanners that did not run:** {{ results.skipped_scanners | map(attribute='name') | join(', ') }}.
+{% if results.not_run_scanners %}
+**Scanners that did not run:** {{ results.not_run_scanners | map(attribute='name') | join(', ') }}.
 Their dimensions were excluded from the score, not scored as zero.
 {% endif %}
 </details>

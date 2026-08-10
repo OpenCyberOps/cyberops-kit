@@ -38,8 +38,10 @@ container image, which bundles all of them:
 docker run --rm -v "$PWD:/workspace" ghcr.io/opencyberops/cyberops-kit scan /workspace
 ```
 
-Any scanner you do not have is reported as skipped, and the dimension it feeds is
-excluded from the score rather than counted as a failure.
+Any scanner you do not have is reported as **not run**, and the dimension it feeds
+is excluded from the score rather than counted as a failure. A scanner that *ran and
+broke* is reported separately as **failed** — an expected gap and a bug should never
+look the same.
 
 ## Design commitments
 

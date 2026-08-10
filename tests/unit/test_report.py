@@ -9,6 +9,8 @@ import pytest
 from cyberops_kit.core.errors import ReportError
 from cyberops_kit.core.models import (
     DimensionKey,
+    ExcludedScanner,
+    ExclusionOutcome,
     SBOMSummary,
     SLSAAssessment,
     SLSAEvidence,
@@ -185,3 +187,76 @@ def test_formats_constant_matches_what_render_accepts(sample_findings):
     report = make_report(sample_findings)
     for fmt in FORMATS:
         assert render(report, fmt)
+
+
+# --- Failed vs not-run reporting -------------------------------------------------
+#
+# A scanner that was never installed and a scanner that crashed both cost the run a
+# dimension, but only one of them is a bug. An earlier version called both "skipped",
+# which let two genuine CI timeouts hide behind language that reads as benign.
+
+
+def _report_with(excluded):
+    """Build a report whose excluded_scanners are exactly `excluded`."""
+    base = make_report([])
+    return base.model_copy(
+        update={"results": base.results.model_copy(update={"excluded_scanners": excluded})}
+    )
+
+
+NOT_RUN = ExcludedScanner(
+    name="gitleaks",
+    outcome=ExclusionOutcome.NOT_RUN,
+    reason="not_installed",
+    detail="'gitleaks' was not found on PATH",
+)
+FAILED = ExcludedScanner(
+    name="osv",
+    outcome=ExclusionOutcome.FAILED,
+    reason="nonzero_exit",
+    detail="osv-scanner exited 127",
+)
+TIMED_OUT = ExcludedScanner(
+    name="semgrep",
+    outcome=ExclusionOutcome.TIMED_OUT,
+    reason="timeout",
+    detail="semgrep exceeded 600s and was killed",
+)
+
+
+def test_results_partitions_failed_from_not_run():
+    results = _report_with([NOT_RUN, FAILED, TIMED_OUT]).results
+    assert [s.name for s in results.failed_scanners] == ["osv", "semgrep"]
+    assert [s.name for s in results.not_run_scanners] == ["gitleaks"]
+
+
+def test_timed_out_counts_as_a_failure_not_a_skip():
+    """A timeout means the scanner ran and did not finish. That is not a skip."""
+    assert ExclusionOutcome.TIMED_OUT.is_failure is True
+    assert ExclusionOutcome.FAILED.is_failure is True
+    assert ExclusionOutcome.NOT_RUN.is_failure is False
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_failures_are_reported_separately_from_not_run(fmt):
+    output = render(_report_with([NOT_RUN, FAILED, TIMED_OUT]), fmt)
+    assert "failed" in output.lower()
+    assert "did not run" in output.lower()
+    # The failing scanners and their causes must both be visible.
+    for text in ("osv", "semgrep", "nonzero_exit", "timeout", "gitleaks"):
+        assert text in output
+
+
+@pytest.mark.parametrize("fmt", ["markdown", "html"])
+def test_no_failure_section_when_nothing_failed(fmt):
+    """A clean run must not imply something broke."""
+    output = render(_report_with([NOT_RUN]), fmt)
+    assert "Scanners that failed" not in output
+    assert "did not run" in output.lower()
+
+
+def test_json_carries_the_outcome_for_machine_consumers():
+    """CI tooling must be able to tell a crash from a missing binary."""
+    payload = json.loads(render(_report_with([NOT_RUN, TIMED_OUT]), "json"))
+    outcomes = {e["name"]: e["outcome"] for e in payload["results"]["excluded_scanners"]}
+    assert outcomes == {"gitleaks": "not_run", "semgrep": "timed_out"}

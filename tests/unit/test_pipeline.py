@@ -16,7 +16,7 @@ from cyberops_kit.cli import app
 from cyberops_kit.config import Settings
 from cyberops_kit.core.errors import ExitCode
 from cyberops_kit.core.ingest import ingest, is_remote, parse_github_url
-from cyberops_kit.core.models import Severity, Target
+from cyberops_kit.core.models import ExclusionOutcome, Severity, Target
 from cyberops_kit.core.orchestrator import Pipeline
 from cyberops_kit.scanners import registry
 from cyberops_kit.scanners.base import ScanOutcome, ScanResult
@@ -140,8 +140,8 @@ async def test_pipeline_produces_a_full_report(project, monkeypatch):
     assert any(f.rule_id == "CVE-1" for f in report.results.findings)
 
 
-async def test_pipeline_excludes_dimensions_for_skipped_scanners(project, monkeypatch):
-    """A skipped scanner excludes its dimension rather than zeroing it."""
+async def test_pipeline_excludes_dimensions_for_scanners_that_did_not_run(project, monkeypatch):
+    """A scanner that never ran excludes its dimension rather than zeroing it."""
 
     async def all_skipped(self, ctx, prior):
         return ScanResult(
@@ -157,7 +157,11 @@ async def test_pipeline_excludes_dimensions_for_skipped_scanners(project, monkey
     target = Target(repository="owner/repo", commit_sha="a" * 40, source="local")
     report = await Pipeline(Settings()).run(project, target)
 
-    assert report.results.skipped_scanners
+    assert report.results.excluded_scanners
+    # Not installed is benign: these must be classified NOT_RUN, never as failures.
+    assert report.results.not_run_scanners
+    assert report.results.failed_scanners == []
+    assert all(s.outcome is ExclusionOutcome.NOT_RUN for s in report.results.excluded_scanners)
     assert report.results.score.sufficient_coverage is False
     assert all(d.excluded for d in report.results.score.dimensions.values())
     for dimension in report.results.score.dimensions.values():
@@ -176,8 +180,12 @@ async def test_pipeline_survives_a_crashing_plugin(project, monkeypatch):
     target = Target(repository="owner/repo", commit_sha="a" * 40, source="local")
     report = await Pipeline(Settings()).run(project, target)
 
-    assert report.results.skipped_scanners
-    assert any(s.reason == "plugin_crashed" for s in report.results.skipped_scanners)
+    # A crash is a failure, not a skip. Reporting it as "skipped" would hide a bug
+    # behind language that reads as expected and benign.
+    assert report.results.failed_scanners
+    assert report.results.not_run_scanners == []
+    assert any(s.reason == "plugin_crashed" for s in report.results.failed_scanners)
+    assert all(s.outcome is ExclusionOutcome.FAILED for s in report.results.failed_scanners)
 
 
 async def test_pipeline_runs_slsa_after_scorecard(project, monkeypatch):

@@ -123,15 +123,32 @@ No findings were reported by the scanners that ran.
 {% endfor -%}
 {% endif %}
 
-{% if results.skipped_scanners %}
+{% if results.failed_scanners %}
+## ⚠️ Scanners that failed
+
+These scanners **ran and broke**. Unlike a scanner that is simply not installed,
+this is a problem worth investigating — the dimensions below are missing from the
+score because something went wrong, not because there was nothing to measure.
+
+| Scanner | Outcome | Reason | Detail |
+|---|---|---|---|
+{% for scanner in results.failed_scanners -%}
+| `{{ scanner.name }}` | **{{ scanner.outcome.value }}** | {{ scanner.reason }} | {{ scanner.detail or '' }} |
+{% endfor %}
+{% endif %}
+{% if results.not_run_scanners %}
 ## Scanners that did not run
+
+Expected and benign: not installed, disabled, or not applicable to this project.
 
 | Scanner | Reason | Detail |
 |---|---|---|
-{% for scanner in results.skipped_scanners -%}
+{% for scanner in results.not_run_scanners -%}
 | `{{ scanner.name }}` | {{ scanner.reason }} | {{ scanner.detail or '' }} |
 {% endfor %}
-Dimensions fed by these scanners were excluded from the score, not scored as zero.
+{% endif %}
+{% if results.excluded_scanners %}
+Dimensions fed by the scanners above were excluded from the score, not scored as zero.
 {% endif %}
 
 ---
