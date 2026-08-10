@@ -57,7 +57,7 @@ jobs:
         run: cyberops scan . --output .cyberops --pr-comment
 
       - name: Upload SARIF to the Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: .cyberops/report.sarif
 
