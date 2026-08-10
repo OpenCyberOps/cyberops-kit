@@ -1,0 +1,50 @@
+{
+  "date": "2026-01-15T00:00:00Z",
+  "repo": { "name": "github.com/owner/repo", "commit": "abc123def456" },
+  "scorecard": { "version": "v5.0.0", "commit": "deadbeef" },
+  "score": 6.4,
+  "checks": [
+    {
+      "name": "Binary-Artifacts",
+      "score": 10,
+      "reason": "no binaries found in the repo",
+      "details": null,
+      "documentation": { "short": "Determines if the project has binary artifacts.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts" }
+    },
+    {
+      "name": "Branch-Protection",
+      "score": 3,
+      "reason": "branch protection is not maximal on development and all release branches",
+      "details": ["Warn: no status checks found to merge onto branch 'main'"],
+      "documentation": { "short": "Determines if the default and release branches are protected.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection" }
+    },
+    {
+      "name": "Dangerous-Workflow",
+      "score": 0,
+      "reason": "dangerous workflow patterns detected",
+      "details": ["Warn: script injection with untrusted input 'github.event.issue.title'"],
+      "documentation": { "short": "Determines if the project's GitHub Action workflows avoid dangerous patterns.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#dangerous-workflow" }
+    },
+    {
+      "name": "Pinned-Dependencies",
+      "score": 2,
+      "reason": "dependency not pinned by hash detected -- score normalized to 2",
+      "details": ["Warn: GitHub-owned GitHubAction not pinned by hash"],
+      "documentation": { "short": "Determines if the project has declared and pinned the dependencies of its build process.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#pinned-dependencies" }
+    },
+    {
+      "name": "Signed-Releases",
+      "score": -1,
+      "reason": "no releases found",
+      "details": null,
+      "documentation": { "short": "Determines if the project cryptographically signs release artifacts.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#signed-releases" }
+    },
+    {
+      "name": "Token-Permissions",
+      "score": 8,
+      "reason": "detected GitHub workflow tokens with excessive permissions",
+      "details": null,
+      "documentation": { "short": "Determines if the project's workflows follow the principle of least privilege.", "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions" }
+    }
+  ]
+}

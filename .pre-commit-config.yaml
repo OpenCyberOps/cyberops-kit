@@ -1,0 +1,30 @@
+# Run `make install` to install these hooks.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      # The INV-* guards must pass before any commit that touches core/.
+      # They are fast by design, so they run on every commit rather than in CI only.
+      - id: invariants
+        name: invariants (INV-1..INV-7)
+        entry: python -m pytest tests/invariants -q
+        language: system
+        pass_filenames: false
+        files: ^(src/cyberops_kit/|tests/invariants/)

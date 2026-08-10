@@ -1,0 +1,66 @@
+name: New scanner plugin
+description: Propose integrating another security tool.
+labels: [enhancement, scanner]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Scanner plugins are the most valuable contribution to this project.
+        See [add-a-scanner.md](../blob/main/docs/contributing/add-a-scanner.md) —
+        the interface is small and there is a working template.
+
+        Remember: **we orchestrate, we do not reimplement.** This must wrap an
+        existing tool, not implement scanning logic.
+  - type: input
+    id: tool
+    attributes:
+      label: Tool name and URL
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: What does it produce?
+      options:
+        - vulnerability (known CVEs in dependencies)
+        - secret (committed credentials)
+        - static_analysis (SAST)
+        - misconfiguration (IaC, container, workflow)
+        - supply_chain (provenance, pinning, signing)
+        - practice (process hygiene)
+    validations:
+      required: true
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Overlap with existing scanners
+      description: >
+        Does this duplicate what Scorecard, OSV, Semgrep, Gitleaks, Trivy, or Syft
+        already report? Double-counting one issue across two dimensions is something
+        we actively avoid.
+    validations:
+      required: true
+  - type: dropdown
+    id: execution
+    attributes:
+      label: Does it execute code from the target repository?
+      description: Anything resolving a dependency tree must run sandboxed (INV-5).
+      options:
+        - "No — reads files only"
+        - "Yes — resolves dependencies or invokes a build tool"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: output
+    attributes:
+      label: Machine-readable output flag
+      placeholder: "--format json"
+    validations:
+      required: true
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to implement this myself

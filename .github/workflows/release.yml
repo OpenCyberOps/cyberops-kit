@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and attest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write        # OIDC, for provenance signing
+      attestations: write
+    outputs:
+      digest: ${{ steps.hash.outputs.digest }}
+    steps:
+      # SHA-PINNING: see README.md in this directory.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify invariants before releasing
+        run: |
+          python -m pip install -e ".[dev]"
+          make invariants
+
+      - name: Build
+        run: |
+          python -m pip install build
+          python -m build
+
+      - id: hash
+        run: echo "digest=$(sha256sum dist/*.whl | head -1 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # SLSA build provenance on our own artifacts. We start dogfooding here.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/*"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write        # trusted publishing; no long-lived API token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  container:
+    name: Publish container image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      # Hardcoded lowercase on purpose. ${{ github.repository }} would expand to
+      # "OpenCyberOps/cyberops-kit", and container registries reject uppercase in a
+      # repository name — the push fails with "invalid reference format".
+      IMAGE: ghcr.io/opencyberops/cyberops-kit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

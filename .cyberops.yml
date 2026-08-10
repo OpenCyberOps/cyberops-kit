@@ -1,0 +1,27 @@
+# CyberOps Kit's configuration for scanning itself.
+# We dogfood everything, and we publish the result even when it is unflattering.
+version: 1
+
+scanners:
+  enabled: [scorecard, osv, semgrep, gitleaks, trivy, syft, slsa]
+  timeout_seconds: 600
+
+scoring:
+  weights:
+    openssf_scorecard: 25
+    known_vulnerabilities: 25
+    supply_chain_integrity: 20
+    static_analysis: 15
+    secrets_exposure: 10
+    sbom_health: 5
+
+thresholds:
+  fail_below_score: 60
+  fail_on_severity: critical
+
+ai:
+  enabled: false          # Phase 2. Advisory only — never affects the score.
+  provider: null
+  model: null
+  max_findings: 25
+  redact: true            # cannot be set to false

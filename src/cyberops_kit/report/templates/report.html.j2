@@ -1,0 +1,246 @@
+{#
+  HTML report card. Self-contained: no external CSS, fonts, or scripts.
+
+  SEAM-4: the `.advisory` block and its full visual treatment ship in Phase 1 and are
+  dormant. Phase 2 adds no template or stylesheet changes.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security report card — {{ results.target.repository }}</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d21; --muted: #5c6470; --border: #e3e6ea;
+    --panel: #f7f8fa; --critical: #b3261e; --high: #c8500f; --medium: #9a6700;
+    --low: #1f6feb; --info: #5c6470; --pass: #1a7f37; --advisory: #6b4fbb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1114; --fg: #e6e9ed; --muted: #9199a5; --border: #262b33;
+      --panel: #171a1f; --critical: #ff6b5e; --high: #ff9f45; --medium: #d9b03c;
+      --low: #6ea8ff; --info: #9199a5; --pass: #48c168; --advisory: #a58bf0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 2.5rem 0 .75rem; padding-bottom: .35rem;
+       border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; }
+  h4 { font-size: .98rem; margin: 1.25rem 0 .35rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em;
+         background: var(--panel); padding: .1em .35em; border-radius: 3px; }
+  .grade { display: inline-flex; align-items: baseline; gap: .6rem; margin: .5rem 0 1rem; }
+  .grade-letter { font-size: 3.5rem; font-weight: 700; line-height: 1; }
+  .grade-score { font-size: 1.1rem; color: var(--muted); }
+  .grade-A { color: var(--pass); } .grade-B { color: var(--low); }
+  .grade-C { color: var(--medium); } .grade-D { color: var(--high); }
+  .grade-F { color: var(--critical); }
+  .disclaimer { background: var(--panel); border-left: 3px solid var(--muted);
+                padding: .75rem 1rem; margin: 1rem 0; color: var(--muted); font-size: .92rem; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .92rem; }
+  th, td { text-align: left; padding: .5rem .65rem; border-bottom: 1px solid var(--border);
+           vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: .82rem;
+       text-transform: uppercase; letter-spacing: .04em; }
+  .sev { font-weight: 600; text-transform: uppercase; font-size: .75rem; letter-spacing: .05em; }
+  .sev-critical { color: var(--critical); } .sev-high { color: var(--high); }
+  .sev-medium { color: var(--medium); } .sev-low { color: var(--low); }
+  .sev-info { color: var(--info); }
+  .finding { border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.15rem;
+             margin: .85rem 0; background: var(--panel); }
+  .finding-meta { color: var(--muted); font-size: .84rem; margin: .2rem 0 .6rem; }
+  .excluded { color: var(--muted); font-style: italic; }
+  .cap-applied { color: var(--critical); font-weight: 600; }
+  .evidence { list-style: none; padding: 0; }
+  .evidence li { padding: .3rem 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+           color: var(--muted); font-size: .85rem; }
+
+  /* SEAM-4 — AI advisory treatment. Ships in Phase 1, dormant until Phase 2. */
+  .advisory {
+    border-left: 3px solid var(--advisory);
+    background: color-mix(in srgb, var(--advisory) 8%, transparent);
+    padding: .75rem 1rem; margin: .85rem 0 .25rem; border-radius: 0 4px 4px 0;
+  }
+  .advisory-label {
+    display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--advisory); margin-bottom: .35rem;
+  }
+  .advisory p { margin: .25rem 0; font-size: .92rem; }
+  .advisory footer { margin: .5rem 0 0; padding: 0; border: 0; font-size: .78rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Security report card</h1>
+<p><code>{{ results.target.repository }}</code> at <code>{{ results.target.commit_sha[:12] }}</code></p>
+
+{% if results.score.sufficient_coverage %}
+<div class="grade">
+  <span class="grade-letter grade-{{ results.score.grade.value }}">{{ results.score.grade.value }}</span>
+  <span class="grade-score">{{ results.score.composite }}/100 · {{ results.findings | length }} findings</span>
+</div>
+{% else %}
+<div class="grade">
+  <span class="grade-letter" style="font-size:2rem;color:var(--muted)">NOT SCORED</span>
+  <span class="grade-score">{{ results.findings | length }} findings</span>
+</div>
+<p class="disclaimer"><strong>Only
+{{ '%.0f' | format(results.score.coverage * 100) }}% of the scoring model could be
+evaluated.</strong> The composite below ({{ results.score.composite }}/100) is recorded
+for completeness but is <strong>not a grade</strong> — too few scanners produced data
+for it to be comparable to a full run. Install the missing scanners, or use the
+container image, and re-run.</p>
+{% endif %}
+
+{% if results.target.dirty %}
+<p class="disclaimer"><strong>Working tree has uncommitted changes.</strong>
+This run is not reproducible from the recorded commit SHA.</p>
+{% endif %}
+
+<p class="disclaimer">This tool augments professional security review. It does not
+replace it. A good grade means the automated checks we ran found little — not that
+the software is secure.</p>
+
+<h2>Score breakdown</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Dimension</th><th>Score</th><th>Weight</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for key, dimension in results.score.dimensions.items() %}
+    <tr>
+      <td><code>{{ key.value }}</code></td>
+      {% if dimension.excluded %}
+      <td class="excluded">—</td>
+      <td class="excluded">excluded</td>
+      <td class="excluded">{{ dimension.exclusion_reason }}</td>
+      {% else %}
+      <td>{{ '%.0f' | format(dimension.value) }}</td>
+      <td>{{ '%.1f' | format(dimension.effective_weight) }}</td>
+      <td>{{ dimension.evidence | join(' ') }}</td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if results.score.excluded_dimensions %}
+<p class="disclaimer">{{ results.score.excluded_dimensions | length }} dimension(s)
+were excluded for lack of data; their weight was redistributed proportionally. A
+missing scanner is never scored as a failure.</p>
+{% endif %}
+
+<h3>Hard caps</h3>
+<ul class="evidence">
+{% for cap in results.score.caps %}
+  <li>
+    {% if cap.applied %}<span class="cap-applied">APPLIED</span>{% else %}Not applied{% endif %}
+    — {{ cap.condition }} (cap: {{ cap.capped_at }}). {{ cap.detail }}
+  </li>
+{% endfor %}
+</ul>
+
+<h2>Supply chain</h2>
+<p><strong>SLSA build level {{ results.slsa.build_level }}/3</strong></p>
+<ul class="evidence">
+{% for item in results.slsa.evidence %}
+  <li>{{ '✅' if item.passed else '❌' }} <code>{{ item.check }}</code> — {{ item.detail }}
+      <em>({{ item.source }})</em></li>
+{% endfor %}
+</ul>
+
+<h2>SBOM</h2>
+{% if results.sbom.generated %}
+<p>{{ results.sbom.component_count }} components cataloged in
+{{ results.sbom.formats | map(attribute='value') | join(', ') }}.</p>
+<ul class="evidence">
+  <li>Unresolved versions: {{ results.sbom.unresolved_count }}</li>
+  <li>Components without a clear license: {{ results.sbom.license_unknown_count }}</li>
+  {% if results.sbom.outdated_count is none %}
+  <li>Freshness: not measured (requires network lookups)</li>
+  {% else %}
+  <li>Outdated components: {{ results.sbom.outdated_count }}</li>
+  {% endif %}
+</ul>
+{% else %}
+<p>No SBOM could be generated. The composite score is capped at 79.</p>
+{% endif %}
+
+<h2>Findings</h2>
+{% if not results.findings %}
+<p>No findings were reported by the scanners that ran.</p>
+{% else %}
+{% for severity, group in findings_by_severity.items() %}
+<h3 class="sev sev-{{ severity }}">{{ severity }} ({{ group | length }})</h3>
+{% for finding in group %}
+<div class="finding">
+  <h4>{{ finding.title }}</h4>
+  <p class="finding-meta">
+    <code>{{ finding.id }}</code> · <code>{{ finding.rule_id }}</code> ·
+    {{ finding.category.value }} · via {{ finding.scanner.name }}
+    {%- if finding.location %} · <code>{{ finding.location.path }}{% if finding.location.start_line %}:{{ finding.location.start_line }}{% endif %}</code>{% endif %}
+  </p>
+  <p>{{ finding.description }}</p>
+  {% if finding.package %}
+  <p class="finding-meta">Package: <code>{{ finding.package.name }}{% if finding.package.version %}@{{ finding.package.version }}{% endif %}</code>
+  {%- if finding.fixed_version %} · fixed in <code>{{ finding.fixed_version }}</code>{% endif %}</p>
+  {% endif %}
+  {% if finding.cve_ids %}
+  <p class="finding-meta">{{ finding.cve_ids | join(', ') }}</p>
+  {% endif %}
+
+  {# SEAM-4: renders only when an enricher has populated this. Dormant in Phase 1. #}
+  {% if finding.advisory %}
+  <aside class="advisory" data-generated="ai">
+    <span class="advisory-label">AI advisory — not part of the score</span>
+    <p>{{ finding.advisory.rationale }}</p>
+    {% if finding.advisory.remediation %}
+    <p><em>Suggested remediation:</em> {{ finding.advisory.remediation }}</p>
+    {% endif %}
+    <footer>{{ finding.advisory.model_id or finding.advisory.enricher }} ·
+      assessment: {{ finding.advisory.assessment }} ·
+      confidence: {{ finding.advisory.confidence }}</footer>
+  </aside>
+  {% endif %}
+</div>
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+{% if results.skipped_scanners %}
+<h2>Scanners that did not run</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Scanner</th><th>Reason</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for scanner in results.skipped_scanners %}
+    <tr><td><code>{{ scanner.name }}</code></td><td>{{ scanner.reason }}</td>
+        <td>{{ scanner.detail or '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="disclaimer">Dimensions fed by these scanners were excluded from the score,
+not scored as zero.</p>
+{% endif %}
+
+<footer>
+  Generated by CyberOps Kit {{ run_metadata.cyberops_version }} ·
+  scoring model {{ results.scoring_model_version }} ·
+  run {{ run_metadata.run_id[:12] }} ·
+  {{ '%.1f' | format(run_metadata.duration_seconds) }}s
+</footer>
+
+</main>
+</body>
+</html>

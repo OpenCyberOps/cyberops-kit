@@ -1,0 +1,121 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cyberops-kit"
+version = "0.1.0a0"
+description = "Reproducible, auditable security report cards for any software project."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+keywords = ["security", "sbom", "slsa", "supply-chain", "openssf", "sast", "devsecops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+
+# Every dependency here is supply chain surface, and we would fail our own audit if
+# we were careless about it. Justification for each (see CONTRIBUTING.md):
+#   typer     - CLI framework; the `cyberops` entrypoint.
+#   pydantic  - canonical data model; every cross-module structure is a model.
+#   structlog - structured logging with the redaction processor wired in.
+#   jinja2    - Markdown/HTML report templates (SEAM-4).
+#   pyyaml    - reads .cyberops.yml (SEAM-3).
+dependencies = [
+    "typer>=0.12,<1.0",
+    "pydantic>=2.7,<3.0",
+    "structlog>=24.1",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "types-PyYAML",
+    "pre-commit>=3.7",
+]
+docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
+
+[project.scripts]
+cyberops = "cyberops_kit.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/OpenCyberOps/cyberops-kit"
+Documentation = "https://opencyberops.github.io/cyberops-kit"
+Source = "https://github.com/OpenCyberOps/cyberops-kit"
+Issues = "https://github.com/OpenCyberOps/cyberops-kit/issues"
+Changelog = "https://github.com/OpenCyberOps/cyberops-kit/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cyberops_kit"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT", "SIM", "TCH", "ARG", "PTH", "RUF", "D", "ANN", "S"]
+ignore = [
+    "D203",    # conflicts with D211
+    "D213",    # conflicts with D212
+    "ANN401",  # Any is required for scanner `raw` payloads
+    "A003",    # `Finding.id` is mandated by the spec's canonical schema
+    # Most types here are Pydantic models whose annotations must resolve at runtime.
+    # Splitting imports between TYPE_CHECKING and runtime based on current usage is a
+    # footgun in this codebase: moving a name into TYPE_CHECKING breaks the moment it
+    # is used in a model field. Keep imports importable.
+    "TC001",
+    "TC002",
+    "TC003",
+]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use asserts, literal /tmp paths as parsing inputs, the
+# stdlib RNG to prove order-independence, and PATH-resolved git/scanner binaries.
+"tests/**" = ["D", "S101", "S108", "S311", "S603", "S607", "ANN", "ARG", "PLR2004"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+disallow_any_generics = true
+plugins = ["pydantic.mypy"]
+files = ["src/cyberops_kit"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "integration: requires Docker and external scanner binaries",
+]
+
+[tool.coverage.run]
+source = ["src/cyberops_kit"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError", "@abstractmethod"]

@@ -1,0 +1,16 @@
+# Default owners for everything.
+#
+# Individual handles, not an @OpenCyberOps/maintainers team: a CODEOWNERS rule that
+# names a non-existent team silently requests no review. Switch to the team once it
+# exists and has members.
+*                                   @AMBRISH10
+
+# The invariants and the scoring model are the trust surface. Changes there get
+# extra eyes, always.
+/src/cyberops_kit/core/scoring.py   @AMBRISH10
+/src/cyberops_kit/core/redaction.py @AMBRISH10
+/src/cyberops_kit/core/sandbox.py   @AMBRISH10
+/tests/invariants/                  @AMBRISH10
+/docs/methodology/                  @AMBRISH10
+/CLAUDE.md                          @AMBRISH10
+/SECURITY.md                        @AMBRISH10

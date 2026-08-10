@@ -1,0 +1,70 @@
+name: Self-scan
+
+# We dogfood everything: CyberOps Kit scans itself on every push and publishes the
+# result, including when the result is unflattering (see SECURITY.md).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan this repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab
+      pull-requests: write     # post the score comment
+    steps:
+      # SHA-PINNING: see README.md in this directory.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # Gitleaks needs full history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: python -m pip install -e .
+
+      - name: Install scanners
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+          go install github.com/ossf/scorecard/v5@latest
+          go install github.com/zricethezav/gitleaks/v8@latest
+          python -m pip install semgrep
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Report scanner availability
+        run: cyberops doctor
+
+      - name: Scan
+        id: scan
+        env:
+          GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Never fail the build on our own score here. The point is to publish the
+        # result honestly, not to hide a bad one by gating the pipeline on it.
+        continue-on-error: true
+        run: cyberops scan . --output .cyberops --pr-comment
+
+      - name: Upload SARIF to the Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: .cyberops/report.sarif
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: .cyberops/
+
+      - name: Publish the summary
+        run: cat .cyberops/report.md >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,141 @@
+{#
+  Markdown report card.
+
+  SEAM-4: the advisory block below is written in Phase 1 and dormant. It renders only
+  when `finding.advisory` is populated, which happens first in Phase 2. Do not remove
+  it because it looks unused.
+#}
+# Security report card — {{ results.target.repository }}
+
+{% if results.score.sufficient_coverage -%}
+**Grade {{ results.score.grade.value }} · {{ results.score.composite }}/100**
+{%- else -%}
+**NOT SCORED — only {{ '%.0f' | format(results.score.coverage * 100) }}% of the scoring model could be evaluated**
+
+> The composite below is recorded for completeness but is **not a grade**. Too few
+> scanners produced data for it to be comparable to a full run. Install the missing
+> scanners, or use the container image, and re-run.
+>
+> Raw composite: {{ results.score.composite }}/100.
+{%- endif %}
+
+| | |
+|---|---|
+| Commit | `{{ results.target.commit_sha[:12] }}` |
+| Scoring model | `{{ results.scoring_model_version }}` |
+| CyberOps Kit | `{{ run_metadata.cyberops_version }}` |
+| Findings | {{ results.findings | length }} |
+{% if results.target.dirty %}| ⚠️ Working tree | Uncommitted changes present — this run is not reproducible. |
+{% endif %}
+{% if results.profile.languages %}| Languages | {{ results.profile.languages | map(attribute='name') | join(', ') }} |
+{% endif %}
+
+> This tool augments professional security review. It does not replace it. A good
+> grade means the automated checks we ran found little — not that the software is secure.
+
+## Score breakdown
+
+| Dimension | Score | Weight | Notes |
+|---|---|---|---|
+{% for key, dimension in results.score.dimensions.items() -%}
+{% if dimension.excluded -%}
+| `{{ key.value }}` | — | excluded | {{ dimension.exclusion_reason }} |
+{% else -%}
+| `{{ key.value }}` | {{ '%.0f' | format(dimension.value) }} | {{ '%.1f' | format(dimension.effective_weight) }} | {{ dimension.evidence | join(' ') }} |
+{% endif -%}
+{% endfor %}
+{% if results.score.excluded_dimensions %}
+{{ results.score.excluded_dimensions | length }} dimension(s) were excluded for lack of
+data. Their weight was redistributed proportionally across the remaining dimensions —
+a missing scanner is never scored as a failure.
+{% endif %}
+
+### Hard caps
+
+{% for cap in results.score.caps -%}
+- {{ '**APPLIED**' if cap.applied else 'Not applied' }} — {{ cap.condition }} (cap: {{ cap.capped_at }}). {{ cap.detail }}
+{% endfor %}
+
+## Supply chain
+
+**SLSA build level {{ results.slsa.build_level }}/3**
+
+{% for item in results.slsa.evidence -%}
+- {{ '✅' if item.passed else '❌' }} `{{ item.check }}` — {{ item.detail }} *(source: {{ item.source }})*
+{% endfor %}
+
+## SBOM
+
+{% if results.sbom.generated -%}
+{{ results.sbom.component_count }} components cataloged in {{ results.sbom.formats | map(attribute='value') | join(', ') }}.
+
+- Unresolved versions: {{ results.sbom.unresolved_count }}
+- Components without a clear license: {{ results.sbom.license_unknown_count }}
+{% if results.sbom.outdated_count is none -%}
+- Freshness: not measured (requires network lookups)
+{% else -%}
+- Outdated components: {{ results.sbom.outdated_count }}
+{% endif -%}
+{% else -%}
+No SBOM could be generated. The composite score is capped at 79.
+{% endif %}
+
+## Findings
+
+{% if not results.findings -%}
+No findings were reported by the scanners that ran.
+{% else -%}
+{% for severity, group in findings_by_severity.items() -%}
+### {{ severity | capitalize }} ({{ group | length }})
+
+{% for finding in group -%}
+#### {{ finding.title }}
+
+`{{ finding.id }}` · `{{ finding.rule_id }}` · {{ finding.category.value }} · via {{ finding.scanner.name }}
+
+{{ finding.description }}
+
+{% if finding.location -%}
+**Location:** `{{ finding.location.path }}{% if finding.location.start_line %}:{{ finding.location.start_line }}{% endif %}`
+{% endif -%}
+{% if finding.package -%}
+**Package:** `{{ finding.package.name }}{% if finding.package.version %}@{{ finding.package.version }}{% endif %}`
+{% endif -%}
+{% if finding.fixed_version -%}
+**Fixed in:** `{{ finding.fixed_version }}`
+{% endif -%}
+{% if finding.cve_ids -%}
+**CVEs:** {{ finding.cve_ids | join(', ') }}
+{% endif %}
+{#- SEAM-4: dormant in Phase 1, populated in Phase 2. #}
+{% if finding.advisory %}
+> **AI advisory — not part of the score**
+>
+> {{ finding.advisory.rationale }}
+>
+{% if finding.advisory.remediation -%}
+> *Suggested remediation:* {{ finding.advisory.remediation }}
+>
+{% endif -%}
+> — {{ finding.advisory.model_id or finding.advisory.enricher }} · assessment: {{ finding.advisory.assessment }} · confidence: {{ finding.advisory.confidence }}
+{% endif %}
+{% endfor -%}
+{% endfor -%}
+{% endif %}
+
+{% if results.skipped_scanners %}
+## Scanners that did not run
+
+| Scanner | Reason | Detail |
+|---|---|---|
+{% for scanner in results.skipped_scanners -%}
+| `{{ scanner.name }}` | {{ scanner.reason }} | {{ scanner.detail or '' }} |
+{% endfor %}
+Dimensions fed by these scanners were excluded from the score, not scored as zero.
+{% endif %}
+
+---
+
+*Generated by [CyberOps Kit](https://github.com/OpenCyberOps/cyberops-kit) {{ run_metadata.cyberops_version }} ·
+scoring model {{ results.scoring_model_version }} ·
+[methodology](https://github.com/OpenCyberOps/cyberops-kit/blob/main/docs/methodology/scoring.md)*

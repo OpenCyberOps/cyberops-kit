@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.dangerous-subprocess-use",
+      "path": "/workspace/src/runner.py",
+      "start": { "line": 42, "col": 5 },
+      "end": { "line": 42, "col": 60 },
+      "extra": {
+        "message": "Detected subprocess function with user-controlled input.",
+        "severity": "ERROR",
+        "lines": "subprocess.run(user_input, shell=True)",
+        "metadata": { "cwe": ["CWE-78: OS Command Injection"], "confidence": "HIGH", "impact": "HIGH", "references": ["https://owasp.org/Top10/A03_2021-Injection/"] }
+      }
+    },
+    {
+      "check_id": "python.lang.best-practice.assert-used",
+      "path": "/workspace/src/util.py",
+      "start": { "line": 8, "col": 1 },
+      "end": { "line": 8, "col": 20 },
+      "extra": {
+        "message": "Use of assert detected.",
+        "severity": "INFO",
+        "lines": "assert x > 0",
+        "metadata": { "confidence": "LOW" }
+      }
+    }
+  ],
+  "errors": []
+}

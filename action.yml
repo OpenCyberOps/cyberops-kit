@@ -1,0 +1,104 @@
+name: "CyberOps Kit"
+description: "Reproducible, auditable security report card for any repository."
+author: "CyberOps Kit maintainers"
+
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  target:
+    description: "Path to scan, relative to the workspace."
+    required: false
+    default: "."
+  config:
+    description: "Path to .cyberops.yml."
+    required: false
+  output:
+    description: "Directory for report artifacts."
+    required: false
+    default: ".cyberops"
+  formats:
+    description: "Space-separated report formats (json sarif markdown html)."
+    required: false
+    default: "json sarif markdown html"
+  fail-below:
+    description: "Fail the job below this composite score. Ignored when coverage is insufficient."
+    required: false
+  fail-on-severity:
+    description: "Fail the job when a finding at or above this severity is present."
+    required: false
+  baseline:
+    description: "Commit SHA to compute the finding delta against."
+    required: false
+  pr-comment:
+    description: "Write a pull request comment file."
+    required: false
+    default: "true"
+  offline:
+    description: "Disable every outbound network call."
+    required: false
+    default: "false"
+
+outputs:
+  score:
+    description: "Composite score, 0-100."
+    value: ${{ steps.scan.outputs.score }}
+  grade:
+    description: "Letter grade, or 'not-scored' when too little could be evaluated."
+    value: ${{ steps.scan.outputs.grade }}
+  findings:
+    description: "Total number of findings."
+    value: ${{ steps.scan.outputs.findings }}
+  sarif:
+    description: "Path to the SARIF report."
+    value: ${{ steps.scan.outputs.sarif }}
+
+runs:
+  using: composite
+  steps:
+    - id: scan
+      shell: bash
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_FORMATS: ${{ inputs.formats }}
+        INPUT_FAIL_BELOW: ${{ inputs.fail-below }}
+        INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+        INPUT_BASELINE: ${{ inputs.baseline }}
+        INPUT_PR_COMMENT: ${{ inputs.pr-comment }}
+        INPUT_OFFLINE: ${{ inputs.offline }}
+      run: |
+        set -euo pipefail
+
+        args=(scan "$INPUT_TARGET" --output "$INPUT_OUTPUT")
+        for fmt in $INPUT_FORMATS; do args+=(--format "$fmt"); done
+        [[ -n "$INPUT_CONFIG" ]] && args+=(--config "$INPUT_CONFIG")
+        [[ -n "$INPUT_FAIL_BELOW" ]] && args+=(--fail-below "$INPUT_FAIL_BELOW")
+        [[ -n "$INPUT_FAIL_ON_SEVERITY" ]] && args+=(--fail-on-severity "$INPUT_FAIL_ON_SEVERITY")
+        [[ -n "$INPUT_BASELINE" ]] && args+=(--baseline "$INPUT_BASELINE")
+        [[ "$INPUT_PR_COMMENT" == "true" ]] && args+=(--pr-comment)
+        [[ "$INPUT_OFFLINE" == "true" ]] && args+=(--offline)
+
+        # Capture the exit code so outputs are still published on a threshold
+        # failure — a failing score must not hide the report that explains it.
+        set +e
+        cyberops "${args[@]}"
+        exit_code=$?
+        set -e
+
+        report="$INPUT_OUTPUT/report.json"
+        if [[ -f "$report" ]]; then
+          python - "$report" >> "$GITHUB_OUTPUT" <<'PY'
+        import json, sys
+        results = json.load(open(sys.argv[1]))["results"]
+        score = results["score"]
+        print(f"score={score['composite']}")
+        print(f"grade={score['grade'] if score['sufficient_coverage'] else 'not-scored'}")
+        print(f"findings={len(results['findings'])}")
+        PY
+          echo "sarif=$INPUT_OUTPUT/report.sarif" >> "$GITHUB_OUTPUT"
+        fi
+
+        exit $exit_code

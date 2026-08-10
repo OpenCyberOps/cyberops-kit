@@ -1,0 +1,28 @@
+[
+  {
+    "RuleID": "aws-access-token",
+    "Description": "AWS Access Token",
+    "StartLine": 12,
+    "EndLine": 12,
+    "File": "config/deploy.sh",
+    "Commit": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432",
+    "Author": "Example Dev",
+    "Email": "dev@example.com",
+    "Secret": "AKIAIOSFODNN7EXAMPLE",
+    "Match": "aws_key = AKIAIOSFODNN7EXAMPLE",
+    "Entropy": 3.4,
+    "Fingerprint": "config/deploy.sh:aws-access-token:12"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "Description": "Generic API Key",
+    "StartLine": 5,
+    "EndLine": 5,
+    "File": ".env.example",
+    "Commit": "",
+    "Secret": "Zx9Kq2mBvT7nWpLr4sYhGd8FjCe3AuXoQi5RtNbMwVzP",
+    "Match": "API_KEY=Zx9Kq2mBvT7nWpLr4sYhGd8FjCe3AuXoQi5RtNbMwVzP",
+    "Entropy": 4.9,
+    "Fingerprint": ".env.example:generic-api-key:5"
+  }
+]

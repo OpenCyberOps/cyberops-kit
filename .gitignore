@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.idea/
+.vscode/
+.DS_Store
+# CyberOps Kit's own scan output
+.cyberops/
+site/
+
+# Internal build-instruction and planning documents. These guide how the project is
+# built; they are not part of what it ships. Kept locally, never pushed.
+CLAUDE.md
+ROADMAP.md
+docs/engineering/

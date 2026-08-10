@@ -1,0 +1,47 @@
+site_name: CyberOps Kit
+site_description: Reproducible, auditable security report cards for any software project.
+site_url: https://opencyberops.github.io/cyberops-kit
+repo_url: https://github.com/OpenCyberOps/cyberops-kit
+repo_name: OpenCyberOps/cyberops-kit
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+
+nav:
+  - Home: index.md
+  - Methodology:
+      - Scoring: methodology/scoring.md
+  - Contributing:
+      - Add a scanner: contributing/add-a-scanner.md
+  - Decisions:
+      - Overview: adr/README.md
+      - 0001 Orchestrate, don't reimplement: adr/0001-orchestrate-dont-reimplement.md
+      - 0002 No telemetry: adr/0002-no-telemetry.md
+      - 0003 Scoring weights: adr/0003-scoring-weights.md
+      - 0004 The AI boundary: adr/0004-ai-boundary.md
+      - 0005 Stable finding IDs: adr/0005-stable-finding-ids.md
+      - 0006 Missing scanner is not a failure: adr/0006-missing-scanner-is-not-a-failure.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search
