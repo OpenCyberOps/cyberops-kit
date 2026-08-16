@@ -80,12 +80,132 @@ def test_scorecard_preserves_raw_output(run_context):
     assert all("documentation" in f.raw for f in findings)
 
 
-def test_scorecard_skips_without_a_remote_url(run_context):
+def test_scorecard_skips_without_a_remote_url(run_context, monkeypatch):
+    monkeypatch.setenv("GITHUB_AUTH_TOKEN", "t")
     local_only = run_context.model_copy(
         update={"target": run_context.target.model_copy(update={"origin_url": None})}
     )
     assert scorecard.PLUGIN.preflight(local_only) is not None
     assert scorecard.PLUGIN.preflight(run_context) is None
+
+
+def test_scorecard_skips_without_a_github_token(run_context, monkeypatch):
+    """Without a token Scorecard hangs rather than failing.
+
+    Unauthenticated GitHub API access allows 60 requests/hour and Scorecard needs far
+    more, so it spins until the timeout kills it and reports only "timed out" — a
+    misleading verdict bought with the entire budget. Measured against this
+    repository, the same run with a valid token completes 18 checks in about 6
+    seconds. Declining up front, with the reason stated, is strictly better.
+    """
+    for name in scorecard.TOKEN_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+    reason = scorecard.PLUGIN.preflight(run_context)
+    assert reason is not None
+    assert "GITHUB_AUTH_TOKEN" in reason
+
+
+@pytest.mark.parametrize("env_var", scorecard.TOKEN_ENV_VARS)
+def test_scorecard_accepts_either_token_variable(run_context, monkeypatch, env_var):
+    for name in scorecard.TOKEN_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(env_var, "a-token")
+
+    assert scorecard.PLUGIN.preflight(run_context) is None
+
+
+def test_scorecard_forwards_the_github_token_to_the_subprocess(monkeypatch):
+    """The bug that made Scorecard look slow for the life of the project.
+
+    ``run_host`` starts from a minimal environment on purpose, so a scanner
+    subprocess cannot read the operator's shell. Scorecard never declared that it
+    needed the token forwarded, so ``GITHUB_AUTH_TOKEN`` was stripped even when CI
+    set it — Scorecard ran unauthenticated, stalled on the API rate limit, and was
+    reported as a 600s timeout rather than a misconfiguration.
+    """
+    sentinel = "forwarded-value"
+    monkeypatch.setenv("GITHUB_AUTH_TOKEN", sentinel)
+
+    assert scorecard.PLUGIN.host_env()["GITHUB_AUTH_TOKEN"] == sentinel
+
+
+def test_host_env_forwards_nothing_unless_declared(monkeypatch):
+    """The allowlist is the point: undeclared variables never reach a scanner."""
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "should-not-be-forwarded")
+    monkeypatch.setenv("GITHUB_AUTH_TOKEN", "also-not-for-this-one")
+
+    # Gitleaks reads files; it has no business seeing either of these.
+    assert gitleaks.PLUGIN.host_env() == {}
+    assert "AWS_SECRET_ACCESS_KEY" not in scorecard.PLUGIN.host_env()
+
+
+def test_host_env_omits_empty_values(monkeypatch):
+    """An empty credential is worse than none: tools treat it as present and fail."""
+    monkeypatch.setenv("GITHUB_AUTH_TOKEN", "   ")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    assert scorecard.PLUGIN.host_env() == {}
+
+
+def test_scorecard_raw_details_are_canonically_ordered(run_context):
+    """INV-3: Scorecard shuffles `details` between runs, and raw lives in `results`.
+
+    Measured on two live runs of this repository minutes apart: the same 27 detail
+    strings, a different order. `Finding.raw` is inside the deterministic envelope,
+    so that alone broke the byte-identical guarantee. The invariant suite missed it
+    because fixtures have a fixed order.
+    """
+    import json as _json
+
+    payload = _json.loads(load_fixture("scorecard.json"))
+    for check in payload["checks"]:
+        check["details"] = ["Warn: c", "Warn: a", "Warn: b"]
+    shuffled = _json.loads(load_fixture("scorecard.json"))
+    for check in shuffled["checks"]:
+        check["details"] = ["Warn: b", "Warn: c", "Warn: a"]
+
+    first = scorecard.PLUGIN.parse(command_result(_json.dumps(payload)), run_context, Path())
+    second = scorecard.PLUGIN.parse(command_result(_json.dumps(shuffled)), run_context, Path())
+
+    assert [f.raw for f in first] == [f.raw for f in second]
+    assert all(f.raw["details"] == ["Warn: a", "Warn: b", "Warn: c"] for f in first)
+
+
+def test_scorecard_canonicalization_preserves_every_detail(run_context):
+    """Sorting reorders; it must never drop or edit an entry."""
+    import json as _json
+
+    payload = _json.loads(load_fixture("scorecard.json"))
+    original = ["Warn: z", "Warn: a", "Warn: a"]
+    for check in payload["checks"]:
+        check["details"] = list(original)
+
+    findings = scorecard.PLUGIN.parse(command_result(_json.dumps(payload)), run_context, Path())
+
+    for finding in findings:
+        assert sorted(finding.raw["details"]) == sorted(original)
+        # Duplicates are data too, and must survive.
+        assert len(finding.raw["details"]) == len(original)
+
+
+def test_scorecard_version_command_uses_the_subcommand():
+    """``scorecard --version`` is not a flag; it prints usage and parses to nothing.
+
+    The version then went missing from run_metadata, which INV-3 requires.
+    """
+    assert scorecard.PLUGIN.version_command == ("scorecard", "version")
+
+
+def test_scorecard_skip_reason_never_contains_the_token(run_context, monkeypatch):
+    """INV-4: no secret leaves the process, including in a diagnostic message."""
+    for name in scorecard.TOKEN_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "   ")  # present but empty: still no token
+
+    reason = scorecard.PLUGIN.preflight(run_context)
+    assert reason is not None
+    assert "   " not in reason.replace("  ", "")
 
 
 def test_scorecard_handles_malformed_output(run_context):
@@ -174,6 +294,34 @@ def test_semgrep_promotes_high_impact_rules(run_context):
     )
     assert findings[0].severity is Severity.CRITICAL
     assert findings[1].severity is Severity.LOW
+
+
+def test_semgrep_command_pins_a_ruleset_and_never_uses_auto(run_context, tmp_path):
+    """``--config=auto`` and ``--metrics=off`` are mutually exclusive in Semgrep.
+
+    Semgrep resolves an auto config by reporting the project to its registry, so it
+    refuses the pair with "Cannot create auto config when metrics are off" and exits
+    without scanning. Shipping that combination silently excluded the whole
+    static_analysis dimension from every run, and no test caught it because nothing
+    asserted on the command that gets built.
+    """
+    command = semgrep.PLUGIN.build_command(run_context, tmp_path)
+
+    assert "--config=auto" not in command
+    assert f"--config={semgrep.RULESET}" in command
+    # Metrics stay off unconditionally: buying a ruleset with telemetry is not a
+    # trade this project makes (ADR 0002).
+    assert "--metrics=off" in command
+
+
+def test_semgrep_ruleset_is_a_pinned_registry_name(run_context, tmp_path):
+    """A named ruleset is a fixed input; ``auto`` varies per request (INV-3)."""
+    assert semgrep.RULESET.startswith(("p/", "r/"))
+    assert "auto" not in semgrep.RULESET
+
+    command = semgrep.PLUGIN.build_command(run_context, tmp_path)
+    configs = [arg for arg in command if arg.startswith("--config")]
+    assert len(configs) == 1, "exactly one ruleset, so the run is reproducible"
 
 
 def test_semgrep_id_is_stable_when_line_numbers_shift(run_context):

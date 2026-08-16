@@ -150,6 +150,29 @@ Expected and benign: not installed, disabled, or not applicable to this project.
 {% if results.excluded_scanners %}
 Dimensions fed by the scanners above were excluded from the score, not scored as zero.
 {% endif %}
+{% if results.path_exclusions.active %}
+## Paths excluded from this scan
+
+This scan was **narrower than the whole repository**. The patterns below were
+configured in `scanners.exclude_paths`, and findings located under them were removed
+before scoring. A low finding count here reflects a narrower scope, not necessarily a
+cleaner tree.
+
+| Excluded pattern |
+|---|
+{% for pattern in results.path_exclusions.patterns -%}
+| `{{ pattern }}` |
+{% endfor %}
+
+{% if results.path_exclusions.suppressed_findings -%}
+**{{ results.path_exclusions.suppressed_findings }} finding(s)** were removed by these patterns.
+{%- else -%}
+No findings matched these patterns.
+{%- endif %}
+
+Findings that describe the repository as a whole — Scorecard's process checks and the
+SLSA assessment — carry no path and are never removed this way.
+{% endif %}
 
 ---
 

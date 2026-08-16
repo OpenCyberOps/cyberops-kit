@@ -59,8 +59,14 @@ are still accurate; the composite is not comparable to a full run.
 {% endif -%}
 {% endfor %}
 {% if results.not_run_scanners %}
+{# A blank line here is load-bearing: without it GitHub absorbs the text into the
+   table above instead of rendering it as a paragraph. #}
 **Scanners that did not run:** {{ results.not_run_scanners | map(attribute='name') | join(', ') }}.
 Their dimensions were excluded from the score, not scored as zero.
+{% endif %}
+{% if results.path_exclusions.active %}
+
+**Paths excluded from this scan:** {{ results.path_exclusions.patterns | join(', ') }} — {{ results.path_exclusions.suppressed_findings }} finding(s) removed. This scan did not cover the whole repository.
 {% endif %}
 </details>
 

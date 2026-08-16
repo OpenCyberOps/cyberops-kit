@@ -18,6 +18,7 @@ and returns only ``Finding`` objects, and ``Finding`` is frozen.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import tempfile
@@ -150,6 +151,24 @@ class ScannerPlugin(ABC):
     """Scanners whose results this one derives from. The orchestrator schedules
     dependents in a later wave and hands them the earlier results."""
 
+    env_passthrough: frozenset[str] = frozenset()
+    """Environment variables this scanner needs forwarded from the host.
+
+    ``run_host`` deliberately starts from a minimal environment — ``PATH``, ``HOME``,
+    ``LANG`` — so that a scanner subprocess cannot read whatever happens to be in the
+    operator's shell. That default is right, but it is silent: a variable a tool
+    genuinely requires is dropped with no warning, and the tool misbehaves in a way
+    that looks like the tool's fault.
+
+    That is exactly what happened to Scorecard. ``GITHUB_AUTH_TOKEN`` was set in CI
+    and stripped here, so Scorecard ran unauthenticated, stalled against the API rate
+    limit, and was reported as a timeout on every run.
+
+    Declaring a variable here forwards it, and only it. Naming the variables keeps the
+    allowlist auditable — the alternative, passing the whole environment through, would
+    hand every scanner every secret in the shell.
+    """
+
     @abstractmethod
     def applies_to(self, profile: ProjectProfile) -> bool:
         """Return whether this scanner is relevant to the detected project.
@@ -205,6 +224,29 @@ class ScannerPlugin(ABC):
         """
         del ctx
         return None
+
+    def exclude_args(self, patterns: Sequence[str]) -> list[str]:
+        """Return native argv flags that skip ``patterns``, when the tool has them.
+
+        This is an **optimization, not a correctness mechanism**. ``exclude_paths`` is
+        enforced centrally in ``core/normalize.py`` after every scanner has run, so a
+        plugin that returns nothing here is still fully compliant — it just spends
+        time scanning files whose findings are discarded.
+
+        Only wire this up for flags that are stable and precisely scoped. OSV-Scanner
+        deliberately does not implement it: its ``--experimental-exclude`` was
+        measured either ignoring the pattern or excluding every package source in the
+        tree depending on syntax, and a flag that can silently blank a whole dimension
+        is worse than no flag.
+
+        Args:
+            patterns: Configured exclusion patterns.
+
+        Returns:
+            Extra argv entries. Empty by default.
+        """
+        del patterns
+        return []
 
     def extract_documents(
         self, result: CommandResult, ctx: RunContext, workdir: Path
@@ -406,9 +448,12 @@ class ScannerPlugin(ABC):
         Returns:
             The command result.
         """
-        timeout = ctx.config.scanners.timeout_seconds
+        timeout = ctx.config.scanners.timeout_for(self.name)
 
         if self.execution_mode is ExecutionMode.SANDBOX:
+            # Sandboxed scanners get no host environment at all. Forwarding a
+            # credential into a container that runs untrusted code is the one place
+            # this allowlist must not reach (INV-5).
             sandbox = Sandbox(
                 SandboxSpec(
                     image=ctx.config.sandbox.image,
@@ -422,7 +467,28 @@ class ScannerPlugin(ABC):
             )
             return await sandbox.run(command, timeout_seconds=timeout)
 
-        return await run_host(command, cwd=ctx.workspace, timeout_seconds=timeout)
+        return await run_host(
+            command,
+            cwd=ctx.workspace,
+            timeout_seconds=timeout,
+            env=self.host_env(),
+        )
+
+    def host_env(self) -> dict[str, str]:
+        """Return the host environment variables this scanner declared it needs.
+
+        Variables that are unset or empty are omitted rather than forwarded as an
+        empty string, because some tools treat an empty credential as a present one
+        and fail in a more confusing way than they would with nothing at all.
+
+        Returns:
+            The forwarded subset of the environment. Empty for most scanners.
+        """
+        return {
+            name: value
+            for name in sorted(self.env_passthrough)
+            if (value := os.environ.get(name, "").strip())
+        }
 
     @contextmanager
     def workdir(self) -> Iterator[Path]:

@@ -19,7 +19,13 @@ from cyberops_kit.core.models import (
     normalize_path,
     sort_findings,
 )
-from cyberops_kit.core.normalize import assert_unique_ids, deduplicate, normalize
+from cyberops_kit.core.normalize import (
+    apply_path_exclusions,
+    assert_unique_ids,
+    deduplicate,
+    normalize,
+    path_is_excluded,
+)
 from cyberops_kit.core.redaction import Redactor, shannon_entropy
 from cyberops_kit.sbom.analyze import analyze_sbom, parse_cyclonedx
 from cyberops_kit.scanners.base import ScanOutcome, ScanResult
@@ -145,6 +151,46 @@ def test_config_loads_from_yaml(tmp_path):
     assert settings.thresholds.fail_below_score == 80
 
 
+def test_timeout_for_falls_back_to_the_global_budget():
+    settings = Settings()
+    assert settings.scanners.timeout_for("scorecard") == settings.scanners.timeout_seconds
+
+
+def test_timeout_for_prefers_a_per_scanner_budget(tmp_path):
+    """One global budget has to be sized for the slowest tool.
+
+    A fast scanner that hangs then holds the run open for as long as the slowest one
+    legitimately needs, which is how a Scorecard hang cost a full 600s.
+    """
+    (tmp_path / ".cyberops.yml").write_text(
+        "version: 1\nscanners:\n  timeout_seconds: 600\n  timeouts:\n"
+        "    gitleaks: 120\n    SCORECARD: 300\n"
+    )
+    scanners = load_settings(search_from=tmp_path).scanners
+
+    assert scanners.timeout_for("gitleaks") == 120
+    # Names are normalized, so casing in a config file cannot silently miss.
+    assert scanners.timeout_for("scorecard") == 300
+    assert scanners.timeout_for("semgrep") == 600
+
+
+def test_timeouts_are_sorted_so_yaml_key_order_cannot_leak_in(tmp_path):
+    (tmp_path / ".cyberops.yml").write_text(
+        "version: 1\nscanners:\n  timeouts:\n    trivy: 30\n    gitleaks: 20\n    osv: 10\n"
+    )
+    scanners = load_settings(search_from=tmp_path).scanners
+    assert list(scanners.timeouts) == sorted(scanners.timeouts)
+
+
+@pytest.mark.parametrize("seconds", [0, -1, 86_401])
+def test_timeouts_reject_nonsensical_budgets(tmp_path, seconds):
+    (tmp_path / ".cyberops.yml").write_text(
+        f"version: 1\nscanners:\n  timeouts:\n    gitleaks: {seconds}\n"
+    )
+    with pytest.raises(ConfigError):
+        load_settings(search_from=tmp_path)
+
+
 def test_config_rejects_unknown_keys(tmp_path):
     (tmp_path / ".cyberops.yml").write_text("version: 1\nnonsense: true\n")
     with pytest.raises(ConfigError):
@@ -268,6 +314,100 @@ def test_normalize_merges_and_orders_scanner_results():
     findings = normalize(results)
     assert len(findings) == 2
     assert findings[0].severity is Severity.CRITICAL
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The regression: `lstrip("./")` strips every leading "." and "/" character,
+        # not the "./" prefix, so it ate the dot off every dotfile. The mangled path
+        # is what SARIF hands to the GitHub Security tab, so annotations pointed at
+        # files that do not exist.
+        (".github/workflows/ci.yml", ".github/workflows/ci.yml"),
+        (".cyberops.yml", ".cyberops.yml"),
+        (".env.example", ".env.example"),
+        # The prefix it is actually meant to remove.
+        ("./src/app.py", "src/app.py"),
+        ("././src/app.py", "src/app.py"),
+        # Untouched cases.
+        ("src/app.py", "src/app.py"),
+        ("src/.hidden/x.py", "src/.hidden/x.py"),
+    ],
+)
+def test_normalize_path_keeps_the_dot_on_dotfiles(raw, expected):
+    assert normalize_path(raw) == expected
+
+
+def test_dotted_directories_can_be_named_as_exclusion_patterns():
+    """A pattern of `.github` must mean `.github`, not `github`."""
+    assert path_is_excluded(".github/workflows/ci.yml", [".github"]) is True
+    assert path_is_excluded("github/ci.yml", [".github"]) is False
+
+
+@pytest.mark.parametrize(
+    ("path", "patterns", "excluded"),
+    [
+        # A bare directory excludes everything beneath it — the common case.
+        ("tests/fixtures/sbom.cdx.json", ["tests/fixtures"], True),
+        ("tests/fixtures/deep/nested.json", ["tests/fixtures"], True),
+        ("tests/fixtures", ["tests/fixtures"], True),
+        # Anchored at the repo root, so a bare name never matches mid-path.
+        ("src/tests/fixtures/a.json", ["tests"], False),
+        # A prefix that is not a path segment must not match.
+        ("tests/fixtures_extra/a.json", ["tests/fixtures"], False),
+        # Globs work, and are the way to match across directories.
+        ("vendor/lib/jquery.min.js", ["**/*.min.js"], True),
+        ("src/app.py", ["**/*.min.js"], False),
+        # Cosmetic variations users actually type.
+        ("tests/fixtures/a.json", ["./tests/fixtures/"], True),
+        ("tests/fixtures/a.json", ["  tests/fixtures  "], True),
+        # Empty and whitespace-only patterns exclude nothing, rather than everything.
+        ("src/app.py", [""], False),
+        ("src/app.py", ["   "], False),
+        ("src/app.py", [], False),
+    ],
+)
+def test_path_is_excluded_matches_intuitively(path, patterns, excluded):
+    assert path_is_excluded(path, patterns) is excluded
+
+
+def test_apply_path_exclusions_drops_matching_findings_and_discloses_the_count():
+    findings = [
+        make_finding(rule_id="CVE-1", path="tests/fixtures/sbom.cdx.json"),
+        make_finding(rule_id="CVE-2", path="tests/fixtures/creds.json"),
+        make_finding(rule_id="CVE-3", path="src/app.py"),
+    ]
+    kept, disclosure = apply_path_exclusions(findings, ["tests/fixtures"])
+
+    assert [f.rule_id for f in kept] == ["CVE-3"]
+    assert disclosure.suppressed_findings == 2
+    assert disclosure.patterns == ["tests/fixtures"]
+    assert disclosure.active is True
+
+
+def test_apply_path_exclusions_never_drops_a_finding_with_no_location():
+    """A path pattern cannot speak to a finding about the repository as a whole.
+
+    Scorecard's process checks and the SLSA assessment carry no location. Excluding
+    them on a path pattern would silently drop whole scoring dimensions.
+    """
+    findings = [
+        make_finding(scanner="scorecard", rule_id="Branch-Protection", path=None),
+        make_finding(rule_id="CVE-1", path="tests/fixtures/a.json"),
+    ]
+    kept, disclosure = apply_path_exclusions(findings, ["tests/fixtures", "**"])
+
+    assert [f.rule_id for f in kept] == ["Branch-Protection"]
+    assert disclosure.suppressed_findings == 1
+
+
+def test_apply_path_exclusions_is_a_no_op_without_patterns():
+    findings = [make_finding(rule_id=f"CVE-{n}") for n in range(3)]
+    kept, disclosure = apply_path_exclusions(findings, [])
+
+    assert kept == findings
+    assert disclosure.suppressed_findings == 0
+    assert disclosure.active is False
 
 
 def test_assert_unique_ids_detects_collisions():
