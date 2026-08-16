@@ -5,7 +5,7 @@
 # curl|sh'd at build time: the digest of what we ship is then determined by the
 # upstream image we pin, and is visible in this file.
 
-FROM golang:1.23-alpine AS scanners
+FROM golang:1.26-alpine AS scanners
 RUN apk add --no-cache git
 RUN go install github.com/google/osv-scanner/cmd/osv-scanner@latest \
  && go install github.com/ossf/scorecard/v5@latest \
