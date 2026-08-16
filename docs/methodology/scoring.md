@@ -245,6 +245,13 @@ scanner — which makes a project less secure, not more.
 Semgrep's `severity` reflects rule confidence more than exploitability, so a rule
 declaring `impact: HIGH` in its metadata is promoted one band.
 
+**Which rules run.** Semgrep is invoked with the pinned registry ruleset `p/default`
+and `--metrics=off`. The two are related: Semgrep's `--config=auto` resolves a
+ruleset by reporting the project to its registry, so it cannot run with metrics
+disabled. Naming the ruleset explicitly is what lets this project keep telemetry off
+([ADR 0002](../adr/0002-no-telemetry.md)) and makes the rule selection a fixed input
+rather than one negotiated per request.
+
 ### `secrets_exposure` — weight 10
 
 | Condition | Value |
@@ -313,10 +320,12 @@ Stated plainly, because a methodology document that lists only strengths is mark
   project with no vulnerabilities and no secrets, process hygiene drives most of the
   composite. That is intentional — hygiene predicts future posture — but it means a
   well-run repository with an unpatched CVE can outscore a quiet one that is clean.
-- **Semgrep's `--config=auto` ruleset is not pinned.** Rule updates can move the
-  static analysis score between runs on an unchanged commit. This is the one place
-  where reproducibility depends on an upstream service; `run_metadata.tool_versions`
-  records the Semgrep version but not the ruleset revision.
+- **The Semgrep ruleset is pinned by name, not by revision.** `p/default` is recorded
+  in `run_metadata.tool_versions`, but the registry serves its *contents*, and rules
+  added upstream can move the static analysis score between runs on an unchanged
+  commit. This is the one place where reproducibility depends on an upstream service.
+  Vendoring the ruleset would close the gap at the cost of maintaining a rule corpus,
+  which [ADR 0001](../adr/0001-orchestrate-dont-reimplement.md) argues against.
 - **Unverified secrets are a judgment call.** See the `secrets_exposure` section.
 - **SLSA level 3 is hard to reach honestly.** It requires every action SHA-pinned and
   no dangerous workflow patterns. Most repositories that generate provenance will

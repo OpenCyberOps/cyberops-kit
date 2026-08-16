@@ -31,6 +31,27 @@ from cyberops_kit.scanners.base import UNKNOWN_VERSION, ExecutionMode, ScannerPl
 FINDINGS_EXIT: Final = 1
 """Semgrep exits 1 when it has findings."""
 
+RULESET: Final = "p/default"
+"""Registry ruleset this integration runs.
+
+Named explicitly rather than using ``--config=auto`` for two reasons.
+
+First, ``auto`` is incompatible with ``--metrics=off``: Semgrep resolves an auto
+config by reporting the project to its registry, so it refuses the combination
+outright with *"Cannot create auto config when metrics are off"*. Sending telemetry
+to obtain a ruleset is not a trade this project makes (ADR 0002), so the ruleset is
+the part that gives.
+
+Second, ``auto`` is unpinned. Which rules it selects depends on what the registry
+infers about the project at request time, so an unchanged commit could score
+differently between runs. A named ruleset is a fixed input recorded in
+``run_metadata.tool_versions``.
+
+The registry still serves this ruleset's *contents*, which can change upstream. That
+residual limitation is documented in ``docs/methodology/scoring.md`` rather than
+papered over.
+"""
+
 _SEVERITY_BY_NAME: Final[dict[str, Severity]] = {
     "ERROR": Severity.HIGH,
     "WARNING": Severity.MEDIUM,
@@ -55,7 +76,7 @@ class SemgrepPlugin(ScannerPlugin):
     """Semgrep pattern-matches source text; it never executes the code it reads."""
 
     requires_network = True
-    """``--config=auto`` resolves rulesets from the Semgrep registry."""
+    """Ruleset contents are fetched from the Semgrep registry (see ``RULESET``)."""
 
     ok_returncodes = frozenset({0, FINDINGS_EXIT})
 
@@ -84,7 +105,7 @@ class SemgrepPlugin(ScannerPlugin):
         return [
             "semgrep",
             "scan",
-            "--config=auto",
+            f"--config={RULESET}",
             "--json",
             "--quiet",
             "--no-git-ignore",

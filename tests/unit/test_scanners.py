@@ -176,6 +176,34 @@ def test_semgrep_promotes_high_impact_rules(run_context):
     assert findings[1].severity is Severity.LOW
 
 
+def test_semgrep_command_pins_a_ruleset_and_never_uses_auto(run_context, tmp_path):
+    """``--config=auto`` and ``--metrics=off`` are mutually exclusive in Semgrep.
+
+    Semgrep resolves an auto config by reporting the project to its registry, so it
+    refuses the pair with "Cannot create auto config when metrics are off" and exits
+    without scanning. Shipping that combination silently excluded the whole
+    static_analysis dimension from every run, and no test caught it because nothing
+    asserted on the command that gets built.
+    """
+    command = semgrep.PLUGIN.build_command(run_context, tmp_path)
+
+    assert "--config=auto" not in command
+    assert f"--config={semgrep.RULESET}" in command
+    # Metrics stay off unconditionally: buying a ruleset with telemetry is not a
+    # trade this project makes (ADR 0002).
+    assert "--metrics=off" in command
+
+
+def test_semgrep_ruleset_is_a_pinned_registry_name(run_context, tmp_path):
+    """A named ruleset is a fixed input; ``auto`` varies per request (INV-3)."""
+    assert semgrep.RULESET.startswith(("p/", "r/"))
+    assert "auto" not in semgrep.RULESET
+
+    command = semgrep.PLUGIN.build_command(run_context, tmp_path)
+    configs = [arg for arg in command if arg.startswith("--config")]
+    assert len(configs) == 1, "exactly one ruleset, so the run is reproducible"
+
+
 def test_semgrep_id_is_stable_when_line_numbers_shift(run_context):
     """The whole point of the content anchor."""
     import json

@@ -52,6 +52,7 @@ from cyberops_kit.sbom.analyze import analyze_sbom
 from cyberops_kit.scanners import registry
 from cyberops_kit.scanners.base import ScannerPlugin, ScanOutcome, ScanResult
 from cyberops_kit.scanners.scorecard import AGGREGATE_METRIC
+from cyberops_kit.scanners.semgrep import RULESET as SEMGREP_RULESET
 from cyberops_kit.scanners.syft import COMPONENT_COUNT_METRIC
 
 logger = structlog.get_logger(__name__)
@@ -358,6 +359,12 @@ class Pipeline:
             for result in results.values()
             if result.version and result.version != "unknown"
         }
+        # The ruleset is as much an input to the static analysis score as the binary
+        # that applied it, so it is recorded on the same terms.
+        semgrep_result = results.get("semgrep")
+        if semgrep_result is not None and semgrep_result.produced_data:
+            versions["semgrep-ruleset"] = SEMGREP_RULESET
+
         if (git := await git_version()) is not None:
             versions["git"] = git
         return {name: versions[name] for name in sorted(versions)}
