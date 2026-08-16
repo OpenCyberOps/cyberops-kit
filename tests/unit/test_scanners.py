@@ -148,6 +148,47 @@ def test_host_env_omits_empty_values(monkeypatch):
     assert scorecard.PLUGIN.host_env() == {}
 
 
+def test_scorecard_raw_details_are_canonically_ordered(run_context):
+    """INV-3: Scorecard shuffles `details` between runs, and raw lives in `results`.
+
+    Measured on two live runs of this repository minutes apart: the same 27 detail
+    strings, a different order. `Finding.raw` is inside the deterministic envelope,
+    so that alone broke the byte-identical guarantee. The invariant suite missed it
+    because fixtures have a fixed order.
+    """
+    import json as _json
+
+    payload = _json.loads(load_fixture("scorecard.json"))
+    for check in payload["checks"]:
+        check["details"] = ["Warn: c", "Warn: a", "Warn: b"]
+    shuffled = _json.loads(load_fixture("scorecard.json"))
+    for check in shuffled["checks"]:
+        check["details"] = ["Warn: b", "Warn: c", "Warn: a"]
+
+    first = scorecard.PLUGIN.parse(command_result(_json.dumps(payload)), run_context, Path())
+    second = scorecard.PLUGIN.parse(command_result(_json.dumps(shuffled)), run_context, Path())
+
+    assert [f.raw for f in first] == [f.raw for f in second]
+    assert all(f.raw["details"] == ["Warn: a", "Warn: b", "Warn: c"] for f in first)
+
+
+def test_scorecard_canonicalization_preserves_every_detail(run_context):
+    """Sorting reorders; it must never drop or edit an entry."""
+    import json as _json
+
+    payload = _json.loads(load_fixture("scorecard.json"))
+    original = ["Warn: z", "Warn: a", "Warn: a"]
+    for check in payload["checks"]:
+        check["details"] = list(original)
+
+    findings = scorecard.PLUGIN.parse(command_result(_json.dumps(payload)), run_context, Path())
+
+    for finding in findings:
+        assert sorted(finding.raw["details"]) == sorted(original)
+        # Duplicates are data too, and must survive.
+        assert len(finding.raw["details"]) == len(original)
+
+
 def test_scorecard_version_command_uses_the_subcommand():
     """``scorecard --version`` is not a flag; it prints usage and parses to nothing.
 

@@ -190,7 +190,7 @@ class ScorecardPlugin(ScannerPlugin):
                     category=Category.PRACTICE,
                     confidence=Confidence.HIGH,
                     references=[url] if url else [],
-                    raw=check,
+                    raw=_canonical(check),
                 )
             )
 
@@ -217,6 +217,33 @@ class ScorecardPlugin(ScannerPlugin):
         if not isinstance(score, (int, float)) or score == INCONCLUSIVE:
             return {}
         return {AGGREGATE_METRIC: float(score)}
+
+
+def _canonical(check: dict[str, Any]) -> dict[str, Any]:
+    """Return the check with its ``details`` list in a stable order.
+
+    Scorecard emits ``details`` in a different order between runs — the same warnings,
+    shuffled. That payload is preserved in ``Finding.raw``, which lives inside the
+    ``results`` envelope, so its ordering alone was enough to break INV-3's
+    byte-identical guarantee on any repository Scorecard evaluates. The invariant
+    suite did not catch it because it exercises fixtures, where the order is fixed.
+
+    Sorting is canonicalization, not editing: ``details`` is an unordered bag of
+    warnings, every element is preserved, and no other field is touched. Ordering is
+    the one property of this payload that carries no information, which is what makes
+    it safe to impose one.
+
+    Args:
+        check: One check object from Scorecard's output.
+
+    Returns:
+        A copy with ``details`` sorted. The input is not mutated — ``slsa.py`` layers
+        its own evaluation on these same objects.
+    """
+    details = check.get("details")
+    if not isinstance(details, list):
+        return check
+    return {**check, "details": sorted(details, key=str)}
 
 
 def _severity_for(check_name: str, score: int) -> Severity:
