@@ -58,6 +58,46 @@ def test_sarif_is_valid_2_1_0(sample_findings):
     assert driver["rules"]
 
 
+def test_every_sarif_result_has_a_location(sample_findings):
+    """GitHub rejects the whole submission if any single result lacks a location.
+
+    Scorecard's process checks and the SLSA assessment are repository-scoped and
+    carry no file. Emitting them without a location made Code Scanning reject the
+    upload entirely — including the file-scoped results that would have annotated
+    correctly:
+
+        locationFromSarifResult: expected at least one location
+
+    That went unnoticed because Scorecard was timing out and produced no findings at
+    all, so no locationless result ever reached the SARIF writer.
+    """
+    findings = [
+        *sample_findings,
+        make_finding(scanner="scorecard", rule_id="Maintained", path=None),
+    ]
+    sarif = render_sarif(make_report(findings))
+
+    results = sarif["runs"][0]["results"]
+    assert results, "sanity: the fixture must produce results"
+    for result in results:
+        locations = result.get("locations")
+        assert locations, f"{result['ruleId']} has no location"
+        assert locations[0]["physicalLocation"]["artifactLocation"]["uri"]
+
+
+def test_repository_scoped_findings_anchor_at_the_repository_root(sample_findings):
+    del sample_findings
+    sarif = render_sarif(
+        make_report([make_finding(scanner="scorecard", rule_id="Branch-Protection", path=None)])
+    )
+    location = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+
+    assert location["artifactLocation"]["uri"] == "."
+    # No region: inventing a line number for a repository-wide finding would be a
+    # claim the scanner never made.
+    assert "region" not in location
+
+
 def test_sarif_results_reference_valid_rule_indices(sample_findings):
     sarif = render_sarif(make_report(sample_findings))
     run = sarif["runs"][0]

@@ -30,6 +30,20 @@ _LEVEL_BY_SEVERITY: Final[dict[Severity, str]] = {
     Severity.INFO: "note",
 }
 
+REPOSITORY_ROOT_URI: Final = "."
+"""Anchor for findings that describe the repository rather than a file.
+
+GitHub Code Scanning rejects an entire SARIF submission when any result carries no
+location::
+
+    locationFromSarifResult: expected at least one location
+
+Scorecard's process checks and the SLSA assessment are genuinely repository-scoped
+and have no file to point at, so they are anchored at the repository root. Omitting
+the location is not an option — one such result discards every other result in the
+upload, including the file-scoped ones that would have annotated correctly.
+"""
+
 _SECURITY_SEVERITY: Final[dict[Severity, str]] = {
     Severity.CRITICAL: "9.5",
     Severity.HIGH: "7.5",
@@ -112,6 +126,33 @@ def _rules(findings: list[Finding]) -> list[dict[str, Any]]:
     return [rules[rule_id] for rule_id in sorted(rules)]
 
 
+def _location(finding: Finding) -> dict[str, Any]:
+    """Build the SARIF location for a finding, which is never omitted.
+
+    Args:
+        finding: The finding to locate.
+
+    Returns:
+        A physical location, anchored at the repository root when the finding has no
+        file of its own.
+    """
+    if finding.location is None:
+        return {"physicalLocation": {"artifactLocation": {"uri": REPOSITORY_ROOT_URI}}}
+
+    region: dict[str, Any] = {}
+    if finding.location.start_line is not None:
+        region["startLine"] = finding.location.start_line
+    if finding.location.end_line is not None:
+        region["endLine"] = finding.location.end_line
+
+    return {
+        "physicalLocation": {
+            "artifactLocation": {"uri": finding.location.path},
+            **({"region": region} if region else {}),
+        }
+    }
+
+
 def _result(finding: Finding, rule_index: dict[str, int]) -> dict[str, Any]:
     """Build one SARIF result.
 
@@ -133,20 +174,7 @@ def _result(finding: Finding, rule_index: dict[str, int]) -> dict[str, Any]:
         "partialFingerprints": {"cyberopsFindingId": finding.id},
     }
 
-    if finding.location is not None:
-        region: dict[str, Any] = {}
-        if finding.location.start_line is not None:
-            region["startLine"] = finding.location.start_line
-        if finding.location.end_line is not None:
-            region["endLine"] = finding.location.end_line
-        result["locations"] = [
-            {
-                "physicalLocation": {
-                    "artifactLocation": {"uri": finding.location.path},
-                    **({"region": region} if region else {}),
-                }
-            }
-        ]
+    result["locations"] = [_location(finding)]
 
     properties: dict[str, Any] = {
         "findingId": finding.id,
