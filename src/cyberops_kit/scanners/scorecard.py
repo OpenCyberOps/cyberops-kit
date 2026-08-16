@@ -11,6 +11,7 @@ away (see ``slsa.py``).
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Final
 
@@ -39,17 +40,48 @@ CRITICAL_CHECKS: Final[frozenset[str]] = frozenset(
 )
 """Checks where a zero score is an active risk rather than a missing practice."""
 
+TOKEN_ENV_VARS: Final[tuple[str, ...]] = ("GITHUB_AUTH_TOKEN", "GITHUB_TOKEN")
+"""Environment variables Scorecard reads a GitHub credential from, in its own order."""
+
+UNAUTHENTICATED_RATE_LIMIT: Final = 60
+"""GitHub API requests per hour without a token. Scorecard needs far more."""
+
+
+def _github_token() -> str | None:
+    """Return the first non-empty GitHub token in the environment.
+
+    Only presence is checked, never the value, and the value is never logged or
+    included in a skip reason (INV-4).
+
+    Returns:
+        The variable name that held a token, or ``None`` when none did.
+    """
+    for name in TOKEN_ENV_VARS:
+        if os.environ.get(name, "").strip():
+            return name
+    return None
+
 
 class ScorecardPlugin(ScannerPlugin):
     """Runs OpenSSF Scorecard against the target's remote repository."""
 
     name = "scorecard"
-    version_command = ("scorecard", "--version")
+    version_command = ("scorecard", "version")
+    """Scorecard has no ``--version`` flag; it exposes a ``version`` subcommand.
+
+    The wrong form did not error visibly — it printed a usage message, the version
+    parser found nothing, and Scorecard's version was quietly absent from
+    ``run_metadata.tool_versions``. INV-3 requires it: a tool version change is a
+    legitimate reason for a score to move and has to be traceable.
+    """
     categories = frozenset({Category.PRACTICE})
     dimension = DimensionKey.OPENSSF_SCORECARD
     execution_mode = ExecutionMode.HOST
     requires_network = True
     """Scorecard queries the GitHub API; there is no offline equivalent."""
+
+    env_passthrough = frozenset(TOKEN_ENV_VARS)
+    """Without the token forwarded, Scorecard runs unauthenticated and stalls."""
 
     def applies_to(self, profile: ProjectProfile) -> bool:
         """Return True for any project.
@@ -66,7 +98,7 @@ class ScorecardPlugin(ScannerPlugin):
         return True
 
     def preflight(self, ctx: RunContext) -> str | None:
-        """Decline when there is no remote repository to evaluate.
+        """Decline when there is no remote repository, or no token to reach it with.
 
         Args:
             ctx: The current run context.
@@ -78,6 +110,18 @@ class ScorecardPlugin(ScannerPlugin):
             return (
                 "no remote repository URL: Scorecard evaluates a hosted repository's "
                 "process hygiene and cannot assess a local-only checkout"
+            )
+        if not _github_token():
+            # Measured, not assumed: with a valid token Scorecard finished this
+            # repository's 18 checks in ~6s. Without one it does not error — it spins
+            # against a 60 request/hour unauthenticated limit until something kills
+            # it, consuming the entire timeout budget and reporting only "timed out".
+            # An honest skip beats ten minutes spent earning a misleading verdict.
+            return (
+                "no GitHub token: set GITHUB_AUTH_TOKEN (or GITHUB_TOKEN) so Scorecard "
+                f"can query the API. Unauthenticated requests are limited to "
+                f"{UNAUTHENTICATED_RATE_LIMIT}/hour, far fewer than its checks need, and "
+                "it will hang rather than fail"
             )
         return None
 

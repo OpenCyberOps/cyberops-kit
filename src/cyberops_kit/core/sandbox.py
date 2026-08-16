@@ -327,7 +327,11 @@ async def run_host(
     except TimeoutError as exc:
         raise SandboxTimeoutError(
             f"command exceeded {timeout_seconds}s and was killed: {' '.join(argv)}",
-            remediation="Raise scanners.timeout_seconds, or narrow the target.",
+            remediation=(
+                "Raise this scanner's budget under scanners.timeouts, or narrow the "
+                "target. Check its configuration first: a tool that reliably exhausts "
+                "its budget is usually misconfigured rather than slow."
+            ),
         ) from exc
 
 
