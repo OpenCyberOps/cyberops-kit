@@ -326,6 +326,12 @@ Stated plainly, because a methodology document that lists only strengths is mark
   commit. This is the one place where reproducibility depends on an upstream service.
   Vendoring the ruleset would close the gap at the cost of maintaining a rule corpus,
   which [ADR 0001](../adr/0001-orchestrate-dont-reimplement.md) argues against.
+- **A scan can be narrower than the repository.** `scanners.exclude_paths` drops
+  findings located under the configured paths before scoring, which lowers penalties
+  in every file-scoped dimension. Two scores are only comparable if they were taken
+  over the same scope, so every report states the patterns in force and how many
+  findings they removed. Findings with no location — Scorecard's process checks, the
+  SLSA assessment — are never removed this way.
 - **Unverified secrets are a judgment call.** See the `secrets_exposure` section.
 - **SLSA level 3 is hard to reach honestly.** It requires every action SHA-pinned and
   no dangerous workflow patterns. Most repositories that generate provenance will

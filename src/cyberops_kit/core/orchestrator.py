@@ -46,7 +46,7 @@ from cyberops_kit.core.models import (
     SLSAAssessment,
     Target,
 )
-from cyberops_kit.core.normalize import normalize
+from cyberops_kit.core.normalize import apply_path_exclusions, normalize
 from cyberops_kit.core.scoring import SCORING_MODEL_VERSION, ScoringContext, compute_score
 from cyberops_kit.sbom.analyze import analyze_sbom
 from cyberops_kit.scanners import registry
@@ -107,6 +107,13 @@ class Pipeline:
         scan_results = await self._scan(ctx, profile)
         findings = normalize(scan_results.values())
 
+        # Authoritative application of scanners.exclude_paths. Runs before enrich and
+        # score so no excluded finding can reach either, whatever a plugin's own
+        # exclusion flag did or did not honor.
+        findings, path_exclusions = apply_path_exclusions(
+            findings, self.settings.scanners.exclude_paths
+        )
+
         # SEAM-2: always called, no-op in Phase 1. Do not make this conditional.
         findings = await run_enrichment(findings, ctx)
 
@@ -127,6 +134,7 @@ class Pipeline:
                 score=score,
                 scoring_model_version=SCORING_MODEL_VERSION,
                 excluded_scanners=self._excluded(scan_results),
+                path_exclusions=path_exclusions,
             ),
             run_metadata=RunMetadata(
                 run_id=run_id,

@@ -332,6 +332,16 @@ def _print_summary(report: Report, written: dict[str, Path], *, quiet: bool) -> 
     if failed or not_run:
         typer.echo("  their dimensions were excluded from the score, not scored as zero")
 
+    # Say plainly when the scan was narrower than the repository. A reader comparing
+    # two scores has to be able to tell a clean tree from a narrow scope.
+    exclusions = report.results.path_exclusions
+    if exclusions.active:
+        typer.echo(f"\n  paths excluded: {', '.join(exclusions.patterns)}")
+        typer.echo(
+            f"  {exclusions.suppressed_findings} finding(s) removed by these patterns; "
+            "this scan did not cover the whole repository"
+        )
+
     typer.echo("")
     for fmt, path in written.items():
         typer.echo(f"  {fmt:<10} {path}")

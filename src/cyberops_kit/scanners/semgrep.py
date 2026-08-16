@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -110,7 +111,21 @@ class SemgrepPlugin(ScannerPlugin):
             "--quiet",
             "--no-git-ignore",
             "--metrics=off",
+            *self.exclude_args(ctx.config.scanners.exclude_paths),
             str(ctx.workspace),
+        ]
+
+    def exclude_args(self, patterns: Sequence[str]) -> list[str]:
+        """Skip excluded paths natively via ``--exclude``.
+
+        Args:
+            patterns: Configured exclusion patterns.
+
+        Returns:
+            One ``--exclude`` flag per pattern.
+        """
+        return [
+            f"--exclude={pattern.strip().rstrip('/')}" for pattern in patterns if pattern.strip()
         ]
 
     def parse(self, result: CommandResult, ctx: RunContext, workdir: Path) -> list[Finding]:

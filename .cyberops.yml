@@ -6,6 +6,31 @@ scanners:
   enabled: [scorecard, osv, semgrep, gitleaks, trivy, syft, slsa]
   timeout_seconds: 600
 
+  # Per-scanner budgets. These are backstops against a hang, not performance targets:
+  # each is generous relative to what the tool actually costs on this repository.
+  # A single global budget has to be sized for the slowest tool, so a fast scanner
+  # that wedges holds the run open for the full ten minutes before anyone finds out.
+  timeouts:
+    gitleaks: 120
+    scorecard: 300     # ~6s with a token; it is skipped outright without one
+    syft: 180
+
+  # tests/fixtures/ holds deliberately-vulnerable sample data: an SBOM pinning
+  # lodash@4.17.20 and requests@2.19.0, and a Gitleaks report containing real-looking
+  # credentials. They are inputs to the parser tests, not dependencies of this
+  # project and not secrets in use.
+  #
+  # Left unexcluded, every one of them was scored: our own published report card read
+  # F 43/100, where all 15 "vulnerabilities" and both "secrets" were fixture data. A
+  # number like that is not unflattering, it is wrong, and a score nobody can trust is
+  # worth less than no score.
+  #
+  # This narrows the scope, it does not hide a result. Every report states these
+  # patterns and the finding count they removed. Nothing outside this directory is
+  # excluded, and no real finding about this project is suppressed anywhere.
+  exclude_paths:
+    - tests/fixtures
+
 scoring:
   weights:
     openssf_scorecard: 25

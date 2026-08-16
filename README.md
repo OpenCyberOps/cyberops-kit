@@ -90,6 +90,18 @@ cyberops doctor
 Outputs: JSON, [SARIF](https://sarifweb.azurewebsites.net/) (for the GitHub Security
 tab), Markdown, HTML, and a shields.io-compatible badge endpoint.
 
+### Scorecard needs a GitHub token
+
+```bash
+export GITHUB_AUTH_TOKEN=<a token with public repo read access>
+```
+
+OpenSSF Scorecard queries the GitHub API heavily. Unauthenticated requests are capped
+at 60 per hour — far fewer than its checks need — and it does not fail when it runs
+out, it stalls. Without a token CyberOps Kit therefore declines to start it and says
+so, rather than spending the whole timeout to report "timed out". With one it takes a
+few seconds. In GitHub Actions, `secrets.GITHUB_TOKEN` is sufficient.
+
 ---
 
 ## The score
@@ -131,7 +143,12 @@ version: 1
 
 scanners:
   enabled: [scorecard, osv, semgrep, gitleaks, trivy, syft, slsa]
-  timeout_seconds: 600
+  timeout_seconds: 600      # default budget for any scanner without its own
+  timeouts:                 # per-scanner budgets, so one slow tool does not set them all
+    gitleaks: 120
+    scorecard: 300
+  exclude_paths:            # findings under these paths are dropped, and disclosed
+    - tests/fixtures
 
 scoring:
   weights:

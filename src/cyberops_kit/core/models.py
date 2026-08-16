@@ -673,6 +673,33 @@ class ExcludedScanner(BaseModel):
     detail: str | None = None
 
 
+class PathExclusions(BaseModel):
+    """What ``scanners.exclude_paths`` removed from this run.
+
+    Scoping a scan and hiding a result are different acts, and the difference is
+    only visible if the scope is stated. Every report renders this block, so a
+    reader can always tell that a lower finding count reflects a narrower scan
+    rather than a cleaner tree.
+
+    Only *file-scoped* findings can be excluded. A finding with no location —
+    Scorecard's process checks, the SLSA supply-chain assessment — describes the
+    repository as a whole and is never suppressed by a path pattern.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    patterns: list[str] = Field(default_factory=list)
+    """Configured glob patterns, verbatim."""
+
+    suppressed_findings: int = 0
+    """How many findings these patterns removed. Zero when nothing matched."""
+
+    @property
+    def active(self) -> bool:
+        """Return whether any exclusion pattern was configured for this run."""
+        return bool(self.patterns)
+
+
 class Results(BaseModel):
     """The deterministic half of the output envelope.
 
@@ -691,6 +718,7 @@ class Results(BaseModel):
     score: Score
     scoring_model_version: str
     excluded_scanners: list[ExcludedScanner] = Field(default_factory=list)
+    path_exclusions: PathExclusions = Field(default_factory=PathExclusions)
 
     @field_validator("findings")
     @classmethod

@@ -49,8 +49,35 @@ class ScannerSettings(BaseModel):
 
     enabled: list[str] = Field(default_factory=lambda: list(DEFAULT_SCANNERS))
     timeout_seconds: int = Field(default=600, gt=0, le=86_400)
+    """Default execution budget for any scanner without its own entry in ``timeouts``."""
+
+    timeouts: dict[str, int] = Field(default_factory=dict)
+    """Per-scanner budgets, overriding ``timeout_seconds``.
+
+    One global budget has to be sized for the slowest tool, which means a fast tool
+    that hangs holds the whole run open for as long as the slowest one legitimately
+    needs. Naming a budget per scanner lets a hang be caught in proportion to what
+    the tool actually costs.
+
+    A timeout is a backstop, not a diagnosis. A scanner that reliably needs more time
+    than it is given is usually misconfigured rather than slow.
+    """
     exclude_paths: list[str] = Field(default_factory=list)
-    """Glob patterns excluded from detection and file-scoped scanning."""
+    """Paths excluded from detection and from file-scoped findings.
+
+    Accepts an exact path, a directory (which excludes everything beneath it), or a
+    glob. Enforcement is central: findings located under these paths are dropped in
+    ``core/normalize.py`` after every scanner has run, so the setting holds even for
+    tools with no exclusion flag of their own. Scanners that *do* have a reliable one
+    also receive it, to avoid scanning what would be discarded.
+
+    Every report discloses the configured patterns and how many findings they
+    removed. Narrowing a scan and hiding a result differ only in whether the scope is
+    stated, so it always is.
+
+    Findings with no location are never excluded — a path pattern cannot speak to
+    Scorecard's process checks or the SLSA assessment.
+    """
 
     @field_validator("enabled")
     @classmethod
@@ -60,6 +87,30 @@ class ScannerSettings(BaseModel):
         for name in value:
             seen.setdefault(name.strip().lower(), None)
         return list(seen)
+
+    @field_validator("timeouts")
+    @classmethod
+    def _validate_timeouts(cls, value: dict[str, int]) -> dict[str, int]:
+        """Normalize scanner names and reject nonsensical budgets."""
+        normalized: dict[str, int] = {}
+        for name, seconds in value.items():
+            if not 0 < seconds <= 86_400:
+                msg = f"scanners.timeouts.{name} must be between 1 and 86400, got {seconds}"
+                raise ValueError(msg)
+            normalized[name.strip().lower()] = seconds
+        # Sorted so the resolved configuration does not depend on YAML key order.
+        return {name: normalized[name] for name in sorted(normalized)}
+
+    def timeout_for(self, name: str) -> int:
+        """Return the execution budget for one scanner, in seconds.
+
+        Args:
+            name: Scanner plugin name.
+
+        Returns:
+            The scanner's own budget when configured, else the global default.
+        """
+        return self.timeouts.get(name.lower(), self.timeout_seconds)
 
 
 class ScoringSettings(BaseModel):

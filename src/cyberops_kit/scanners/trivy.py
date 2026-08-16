@@ -12,6 +12,7 @@ requests only the misconfiguration scanner.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -85,8 +86,20 @@ class TrivyPlugin(ScannerPlugin):
             f"--output={workdir / REPORT_FILENAME}",
             "--quiet",
             "--exit-code=0",
+            *self.exclude_args(ctx.config.scanners.exclude_paths),
             str(ctx.workspace),
         ]
+
+    def exclude_args(self, patterns: Sequence[str]) -> list[str]:
+        """Skip excluded paths natively via ``--skip-dirs``.
+
+        Args:
+            patterns: Configured exclusion patterns.
+
+        Returns:
+            One ``--skip-dirs`` flag per pattern.
+        """
+        return [f"--skip-dirs={pattern}" for pattern in patterns if pattern.strip()]
 
     def parse(self, result: CommandResult, ctx: RunContext, workdir: Path) -> list[Finding]:
         """Map Trivy misconfigurations into canonical findings.

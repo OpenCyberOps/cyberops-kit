@@ -12,6 +12,7 @@ scan finishes. The orchestrator decides where artifacts land.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -75,6 +76,27 @@ class SyftPlugin(ScannerPlugin):
             "--output",
             f"spdx-json={workdir / SPDX_FILENAME}",
             "--quiet",
+            *self.exclude_args(ctx.config.scanners.exclude_paths),
+        ]
+
+    def exclude_args(self, patterns: Sequence[str]) -> list[str]:
+        """Skip excluded paths natively via ``--exclude``.
+
+        Syft is the one scanner where this is more than an optimization. It produces
+        an inventory rather than findings, so the central finding filter cannot reach
+        it — components catalogued from an excluded path would otherwise still count
+        toward ``sbom_health`` and the published component total.
+
+        Args:
+            patterns: Configured exclusion patterns.
+
+        Returns:
+            One ``--exclude`` flag per pattern, as a Syft glob.
+        """
+        return [
+            f"--exclude=./{pattern.strip().lstrip('./').rstrip('/')}/**"
+            for pattern in patterns
+            if pattern.strip()
         ]
 
     def parse(self, result: CommandResult, ctx: RunContext, workdir: Path) -> list[Finding]:

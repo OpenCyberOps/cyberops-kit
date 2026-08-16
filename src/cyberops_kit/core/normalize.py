@@ -15,10 +15,11 @@ a real finding is worse than a duplicate a human can see.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from fnmatch import fnmatchcase
 
 import structlog
 
-from cyberops_kit.core.models import Finding, sort_findings
+from cyberops_kit.core.models import Finding, PathExclusions, sort_findings
 from cyberops_kit.scanners.base import ScanResult
 
 logger = structlog.get_logger(__name__)
@@ -37,6 +38,81 @@ def normalize(results: Iterable[ScanResult]) -> list[Finding]:
     for result in results:
         collected.extend(result.findings)
     return sort_findings(deduplicate(collected))
+
+
+def path_is_excluded(path: str, patterns: Sequence[str]) -> bool:
+    """Return whether a repo-relative path matches any exclusion pattern.
+
+    Three shapes are accepted, because all three are what people actually write:
+
+    * an exact path — ``tests/fixtures/creds.json``
+    * a directory — ``tests/fixtures``, which excludes everything beneath it
+    * a glob — ``**/*.min.js``, matched with :func:`fnmatch.fnmatchcase`
+
+    Matching is case-sensitive and anchored at the repository root, so ``tests``
+    excludes ``tests/a.py`` but never ``src/tests/a.py``. Erring toward matching
+    less is deliberate: an over-broad pattern hides real findings, which is the
+    failure mode that matters in a security tool.
+
+    Args:
+        path: Repo-relative POSIX path, as produced by ``normalize_path``.
+        patterns: Configured exclusion patterns.
+
+    Returns:
+        True when the path should be excluded.
+    """
+    subject = path.strip("/")
+    for raw in patterns:
+        pattern = raw.strip().lstrip("./").rstrip("/")
+        if not pattern:
+            continue
+        if subject == pattern or subject.startswith(f"{pattern}/"):
+            return True
+        if fnmatchcase(subject, pattern):
+            return True
+    return False
+
+
+def apply_path_exclusions(
+    findings: Sequence[Finding], patterns: Sequence[str]
+) -> tuple[list[Finding], PathExclusions]:
+    """Drop findings located under a configured excluded path.
+
+    This is the authoritative implementation of ``scanners.exclude_paths``. It runs
+    centrally, after normalization, rather than being delegated to each tool's own
+    exclusion flag, because tool support is neither universal nor trustworthy:
+    Gitleaks has no path flag at all, and OSV-Scanner's ``--experimental-exclude``
+    was measured either ignoring the pattern entirely or excluding every package
+    source in the tree, depending on the syntax used. Plugins may *additionally*
+    pass a native flag to avoid scanning what will be discarded (see
+    ``ScannerPlugin.exclude_args``), but correctness does not depend on it.
+
+    Findings with no location are never excluded. A path pattern cannot speak to a
+    finding about the repository as a whole.
+
+    Args:
+        findings: Canonically-ordered findings.
+        patterns: Configured exclusion patterns.
+
+    Returns:
+        The surviving findings, and a disclosure record of what was removed.
+    """
+    kept = [
+        finding
+        for finding in findings
+        if finding.location is None or not path_is_excluded(finding.location.path, patterns)
+    ]
+    suppressed = len(findings) - len(kept)
+
+    if suppressed:
+        logger.info(
+            "normalize.path_excluded",
+            suppressed=suppressed,
+            kept=len(kept),
+            patterns=list(patterns),
+        )
+
+    return kept, PathExclusions(patterns=list(patterns), suppressed_findings=suppressed)
 
 
 def deduplicate(findings: Sequence[Finding]) -> list[Finding]:
