@@ -190,7 +190,14 @@ def normalize_path(path: str | Path, *, root: Path | None = None) -> str:
         except (ValueError, OSError):
             # Outside the workspace, or unresolvable: fall through to as-given.
             candidate = Path(path)
-    text = candidate.as_posix().lstrip("./")
+
+    text = candidate.as_posix()
+    # Strip the "./" prefix, and only that. `lstrip("./")` removes every leading "."
+    # and "/" character, which silently ate the dot off every dotfile: ".github/ci.yml"
+    # became "github/ci.yml", a path that does not exist. Those locations are what
+    # SARIF hands to the GitHub Security tab, so the annotations landed nowhere.
+    while text.startswith("./"):
+        text = text[2:]
     return text.strip("/")
 
 

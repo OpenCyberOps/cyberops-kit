@@ -317,6 +317,34 @@ def test_normalize_merges_and_orders_scanner_results():
 
 
 @pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The regression: `lstrip("./")` strips every leading "." and "/" character,
+        # not the "./" prefix, so it ate the dot off every dotfile. The mangled path
+        # is what SARIF hands to the GitHub Security tab, so annotations pointed at
+        # files that do not exist.
+        (".github/workflows/ci.yml", ".github/workflows/ci.yml"),
+        (".cyberops.yml", ".cyberops.yml"),
+        (".env.example", ".env.example"),
+        # The prefix it is actually meant to remove.
+        ("./src/app.py", "src/app.py"),
+        ("././src/app.py", "src/app.py"),
+        # Untouched cases.
+        ("src/app.py", "src/app.py"),
+        ("src/.hidden/x.py", "src/.hidden/x.py"),
+    ],
+)
+def test_normalize_path_keeps_the_dot_on_dotfiles(raw, expected):
+    assert normalize_path(raw) == expected
+
+
+def test_dotted_directories_can_be_named_as_exclusion_patterns():
+    """A pattern of `.github` must mean `.github`, not `github`."""
+    assert path_is_excluded(".github/workflows/ci.yml", [".github"]) is True
+    assert path_is_excluded("github/ci.yml", [".github"]) is False
+
+
+@pytest.mark.parametrize(
     ("path", "patterns", "excluded"),
     [
         # A bare directory excludes everything beneath it — the common case.

@@ -63,7 +63,10 @@ def path_is_excluded(path: str, patterns: Sequence[str]) -> bool:
     """
     subject = path.strip("/")
     for raw in patterns:
-        pattern = raw.strip().lstrip("./").rstrip("/")
+        # `removeprefix`, not `lstrip("./")`: the latter strips every leading "." and
+        # would turn a ".github" pattern into "github", making a dotted directory
+        # impossible to name.
+        pattern = raw.strip().removeprefix("./").rstrip("/")
         if not pattern:
             continue
         if subject == pattern or subject.startswith(f"{pattern}/"):
