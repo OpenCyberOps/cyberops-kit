@@ -140,3 +140,21 @@ def test_provider_and_model_flow_from_config(tmp_path):
 def test_max_findings_has_a_conservative_default():
     """25 per the spec — a ceiling the user opts out of, not into."""
     assert Settings().ai.max_findings == 25
+
+
+def test_ai_timeout_defaults_above_a_typical_api_timeout():
+    """The local provider is a first-class citizen, not an afterthought.
+
+    A CPU-bound mid-size model routinely needs more than the ~60s a hosted API
+    call would. The default has to already assume that, rather than force every
+    local-model user to discover it by timing out first.
+    """
+    assert Settings().ai.timeout_seconds >= 120.0
+
+
+def test_ai_timeout_flows_from_the_cli_flag(tmp_path):
+    """``--ai-timeout`` reaches the setting the advisor actually reads."""
+    settings = load_settings(
+        search_from=tmp_path, overrides={"ai": {"enabled": True, "timeout_seconds": 300.0}}
+    )
+    assert settings.ai.timeout_seconds == 300.0

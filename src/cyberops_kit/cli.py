@@ -121,6 +121,13 @@ def scan(
     ai_model: Annotated[
         str | None, typer.Option("--ai-model", help="Model ID to use for AI triage.")
     ] = None,
+    ai_timeout: Annotated[
+        float | None,
+        typer.Option(
+            "--ai-timeout",
+            help="Per-finding inference timeout in seconds. Raise this for a local model.",
+        ),
+    ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Debug logging.")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Errors only.")] = False,
 ) -> None:
@@ -128,11 +135,12 @@ def scan(
     _configure_logging(verbose, quiet)
 
     overrides: dict[str, object] = {"offline": offline or None}
-    if ai_triage or ai_provider or ai_model:
+    if ai_triage or ai_provider or ai_model or ai_timeout:
         overrides["ai"] = {
             "enabled": ai_triage or None,
             "provider": ai_provider,
             "model": ai_model,
+            "timeout_seconds": ai_timeout,
         }
     if formats or output:
         overrides["output"] = {

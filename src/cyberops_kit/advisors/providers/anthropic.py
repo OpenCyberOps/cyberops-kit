@@ -14,7 +14,7 @@ caller: a constrained decode is not a guarantee we are willing to skip a check f
 from __future__ import annotations
 
 import os
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import structlog
 
@@ -24,6 +24,13 @@ from cyberops_kit.advisors.providers.base import (
     CompletionResponse,
     assert_redacted,
 )
+
+if TYPE_CHECKING:
+    # Only for static typing. `from __future__ import annotations` makes every
+    # annotation in this module a lazy string, so this import costs nothing at
+    # runtime and never requires the optional `anthropic` package to be installed.
+    from anthropic.types import OutputConfigParam
+    from anthropic.types.json_output_format_param import JSONOutputFormatParam
 
 logger = structlog.get_logger(__name__)
 
@@ -99,7 +106,7 @@ class AnthropicProvider:
                 max_tokens=request.max_output_tokens,
                 system=request.system,
                 messages=[{"role": "user", "content": request.user}],
-                output_config={"format": _ADVISORY_SCHEMA},
+                output_config=_build_output_config(),
             )
         except anthropic.AuthenticationError as exc:
             raise ProviderNotAvailableError(
@@ -124,29 +131,44 @@ class AnthropicProvider:
         )
 
 
-_ADVISORY_SCHEMA: Final[dict[str, Any]] = {
-    "type": "json_schema",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "assessment": {
-                "type": "string",
-                "enum": ["likely_exploitable", "likely_false_positive", "unclear"],
-            },
-            "rationale": {"type": "string"},
-            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-            "remediation": {"type": ["string", "null"]},
-            "evidence_refs": {"type": "array", "items": {"type": "string"}},
+_ADVISORY_JSON_SCHEMA: Final[dict[str, Any]] = {
+    "type": "object",
+    "properties": {
+        "assessment": {
+            "type": "string",
+            "enum": ["likely_exploitable", "likely_false_positive", "unclear"],
         },
-        "required": ["assessment", "rationale", "confidence"],
-        "additionalProperties": False,
+        "rationale": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "remediation": {"type": ["string", "null"]},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
     },
+    "required": ["assessment", "rationale", "confidence"],
+    "additionalProperties": False,
 }
-"""Constrains the decode to the advisory shape. Mirrors ``TriageResult``.
+"""The advisory shape as a plain JSON schema. Mirrors ``TriageResult``.
 
 Kept beside the provider rather than in ``core/`` because it is a wire-format
 detail. The authoritative shape is the Pydantic model in ``triage.py``, which
 validates every reply regardless of what the provider claims to have constrained.
 """
+
+
+def _build_output_config() -> OutputConfigParam:
+    """Build the request's ``output_config``, constraining the decode.
+
+    A function rather than a module-level constant so the SDK's ``TypedDict`` types
+    are only ever imported alongside the rest of this module's lazy ``anthropic``
+    import, never at module load time for users who never enable this provider.
+
+    Returns:
+        The output config, typed against the SDK's own structured-output param.
+    """
+    format_param: JSONOutputFormatParam = {
+        "type": "json_schema",
+        "schema": _ADVISORY_JSON_SCHEMA,
+    }
+    return {"format": format_param}
+
 
 __all__ = ["DEFAULT_MODEL", "AnthropicProvider"]

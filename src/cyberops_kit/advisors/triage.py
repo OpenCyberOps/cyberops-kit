@@ -280,6 +280,7 @@ class LLMTriageEnricher(Enricher):
             model_id=settings.model or "",
             budget=Budget(max_findings=settings.max_findings),
             cache=ResponseCache(ctx.config.output.directory),
+            timeout_seconds=settings.timeout_seconds,
         )
 
 

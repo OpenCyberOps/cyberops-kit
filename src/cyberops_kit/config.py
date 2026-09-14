@@ -198,6 +198,16 @@ class AISettings(BaseModel):
     model: str | None = None
     max_findings: int = Field(default=25, gt=0, le=1000)
     redact: bool = True
+    timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
+    """Per-inference-call budget.
+
+    120s by default rather than a typical API timeout, because the local provider
+    is a first-class citizen and a mid-size CPU-bound model routinely needs more
+    than 60s per finding. Configurable because that number is still a guess for any
+    given machine and model — a slow laptop running a 14B model needs longer, a
+    fast GPU host needs less. Bounded well below the scanner ceiling: an AI request
+    hanging must never be mistaken for a scanner hang.
+    """
 
     @field_validator("redact")
     @classmethod
