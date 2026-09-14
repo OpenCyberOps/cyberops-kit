@@ -61,6 +61,8 @@ class LLMAdvisor:
         model_id: Model to request.
         budget: Per-run ceilings, updated as calls complete.
         cache: Content-addressed response cache.
+        timeout_seconds: Per-call timeout. Public — the enricher logs it up front so
+            a slow local run reads as expected behavior, not as a hang.
     """
 
     def __init__(
@@ -85,7 +87,7 @@ class LLMAdvisor:
         self.model_id = model_id
         self.budget = budget
         self.cache = cache
-        self._timeout = timeout_seconds
+        self.timeout_seconds = timeout_seconds
 
     async def complete(
         self,
@@ -139,7 +141,7 @@ class LLMAdvisor:
             system=system,
             user=redacted_user,
             model_id=self.model_id,
-            timeout_seconds=self._timeout,
+            timeout_seconds=self.timeout_seconds,
             redacted=True,
         )
 

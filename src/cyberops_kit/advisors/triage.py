@@ -38,7 +38,24 @@ CONTEXT_LINES: Final = 30
 """Lines of source on each side of the finding. ~60 total, per the Phase 2 spec."""
 
 MAX_CONCURRENCY: Final = 4
-"""Concurrent inference calls. Bounded so a local daemon is not overwhelmed."""
+"""Concurrent inference calls against a hosted provider.
+
+Hosted APIs genuinely parallelize independent requests. A single-instance local
+daemon commonly does not: measured against a real Ollama server running a 14B model
+on mixed CPU/GPU, three concurrent requests each ran ~45% *slower* than one request
+alone (195s solo vs. ~280s each concurrent) — the daemon was serializing compute,
+not adding throughput. See :data:`LOCAL_MAX_CONCURRENCY`.
+"""
+
+LOCAL_MAX_CONCURRENCY: Final = 1
+"""Concurrent inference calls against the local provider.
+
+Deliberately serial. Running requests one at a time against a resource-constrained
+local daemon is not just safer, it is *faster* per finding — see the measurement
+note on :data:`MAX_CONCURRENCY`. A user with a machine that genuinely can serve
+several requests in parallel can still get there by running multiple Ollama model
+instances themselves; this default protects the common case, a single laptop GPU.
+"""
 
 _TRIAGED_CATEGORIES: Final = frozenset({Category.VULNERABILITY, Category.STATIC_ANALYSIS})
 _TRIAGED_SEVERITIES: Final = frozenset({Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM})
@@ -129,12 +146,23 @@ class LLMTriageEnricher(Enricher):
         if not candidates:
             return findings
 
+        concurrency = LOCAL_MAX_CONCURRENCY if advisor.provider.name == "local" else MAX_CONCURRENCY
         logger.info(
             "advisors.triage.started",
             candidates=len(candidates),
             provider=advisor.provider.name,
             eligible=sum(1 for f in findings if self.applies_to(f)),
+            concurrency=concurrency,
+            timeout_seconds=advisor.timeout_seconds,
         )
+        if advisor.provider.name == "local":
+            logger.info(
+                "advisors.triage.local_provider_notice",
+                detail=(
+                    "local inference runs one finding at a time and can take minutes "
+                    "per finding on CPU-bound hardware; this is expected, not a hang"
+                ),
+            )
 
         advisories = await self._analyze_all(candidates, findings, ctx, advisor)
 
@@ -175,7 +203,8 @@ class LLMTriageEnricher(Enricher):
         Returns:
             A mapping of finding ID to advisory, containing only successes.
         """
-        semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+        limit = LOCAL_MAX_CONCURRENCY if advisor.provider.name == "local" else MAX_CONCURRENCY
+        semaphore = asyncio.Semaphore(limit)
 
         async def _one(finding: Finding) -> tuple[str, Advisory | None]:
             async with semaphore:

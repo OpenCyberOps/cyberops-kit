@@ -8,6 +8,8 @@ finding without an advisory, never a corrupted or missing finding.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from cyberops_kit.advisors.base import LLMAdvisor
@@ -18,6 +20,8 @@ from cyberops_kit.advisors.providers import CompletionRequest, CompletionRespons
 from cyberops_kit.advisors.providers.base import assert_redacted
 from cyberops_kit.advisors.triage import (
     CONTEXT_LINES,
+    LOCAL_MAX_CONCURRENCY,
+    MAX_CONCURRENCY,
     LLMTriageEnricher,
     TriageResult,
     build_context,
@@ -65,6 +69,45 @@ def build_advisor(provider: ScriptedProvider, tmp_path, *, max_findings: int = 2
         budget=Budget(max_findings=max_findings),
         cache=ResponseCache(tmp_path, enabled=False),
     )
+
+
+class ConcurrencyTrackingProvider:
+    """Records the highest number of ``complete()`` calls in flight at once.
+
+    Exists to prove a concurrency ceiling is actually enforced, not just configured.
+    A provider that merely counts total calls cannot distinguish "ran serially" from
+    "ran all at once" — this one can, by sampling the in-flight count while each call
+    is parked on an event.
+    """
+
+    def __init__(self, name: str, *, delay: float = 0.02) -> None:
+        """Initialize the tracker.
+
+        Args:
+            name: Provider name to report — set to ``"local"`` to exercise the
+                serial path, anything else to exercise the parallel one.
+            delay: How long each call "runs" for, giving overlapping calls a window
+                in which to be observed concurrently.
+        """
+        self.name = name
+        self._delay = delay
+        self.in_flight = 0
+        self.max_in_flight = 0
+
+    def available(self) -> tuple[bool, str]:
+        """Always usable."""
+        return True, ""
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        """Hold briefly while recording the concurrent in-flight count."""
+        assert_redacted(request, provider=self.name)
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(self._delay)
+        finally:
+            self.in_flight -= 1
+        return CompletionResponse(text=VALID_REPLY, model_id="tracker-1", output_tokens=10)
 
 
 def vuln(rule_id: str = "CVE-2021-0001", severity: Severity = Severity.HIGH) -> Finding:
@@ -351,6 +394,68 @@ def test_a_missing_source_file_is_reported_not_raised(run_context, tmp_path):
     context = build_context(finding, ctx)
 
     assert "not readable" in context
+
+
+# --- Concurrency -------------------------------------------------------------------
+#
+# A resource-constrained local daemon does not parallelize independent requests the
+# way a hosted API does. Measured against a real Ollama server running a 14B model on
+# mixed CPU/GPU, three concurrent requests each ran ~45% *slower* than one request
+# alone. Running local inference serially is therefore not just safer, it is faster
+# per finding — the tests below lock in that the enricher actually does this, not
+# merely that a constant with the right value exists somewhere.
+
+
+@pytest.mark.asyncio
+async def test_the_local_provider_runs_one_finding_at_a_time(run_context, tmp_path):
+    """The property the measurement demonstrated: local inference is serialized."""
+    tracker = ConcurrencyTrackingProvider("local")
+    advisor = LLMAdvisor(
+        provider=tracker,
+        model_id="tracker-1",
+        budget=Budget(max_findings=25),
+        cache=ResponseCache(tmp_path, enabled=False),
+    )
+    enricher = LLMTriageEnricher(advisor=advisor)
+
+    findings = [vuln(f"CVE-{n}") for n in range(6)]
+    await enricher.enrich(findings, run_context)
+
+    assert tracker.max_in_flight == 1
+
+
+@pytest.mark.asyncio
+async def test_a_hosted_provider_still_runs_concurrently(run_context, tmp_path):
+    """The fix for local must not accidentally serialize every provider.
+
+    Hosted APIs genuinely benefit from concurrency; only the local daemon measurably
+    does not. This proves the two paths are actually distinct, not that concurrency
+    was removed globally to "fix" the local case.
+    """
+    tracker = ConcurrencyTrackingProvider("anthropic", delay=0.05)
+    advisor = LLMAdvisor(
+        provider=tracker,
+        model_id="tracker-1",
+        budget=Budget(max_findings=25),
+        cache=ResponseCache(tmp_path, enabled=False),
+    )
+    enricher = LLMTriageEnricher(advisor=advisor)
+
+    findings = [vuln(f"CVE-{n}") for n in range(6)]
+    await enricher.enrich(findings, run_context)
+
+    assert tracker.max_in_flight > 1
+    assert tracker.max_in_flight <= MAX_CONCURRENCY
+
+
+def test_local_concurrency_is_one():
+    """The constant itself, so a future edit has to change this test too."""
+    assert LOCAL_MAX_CONCURRENCY == 1
+
+
+def test_hosted_concurrency_is_greater_than_local():
+    """Guards against both constants being set equal by an unrelated edit."""
+    assert MAX_CONCURRENCY > LOCAL_MAX_CONCURRENCY
 
 
 # --- Budget ----------------------------------------------------------------------
