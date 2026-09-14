@@ -26,7 +26,14 @@ from cyberops_kit.config import AISettings
 from cyberops_kit.core.models import Category, Finding, ScannerRef, Severity
 
 AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
-GITHUB_PAT = "ghp_016C7e3fA9b2D4c6E8f0A1b3C5d7E9f1A3b5C7"
+"""AWS's own canonical placeholder key, recognized as non-functional by convention."""
+
+GITHUB_PAT = "ghp_" + "example00fake00credential00for00tests00"[:36]  # gitleaks:allow
+"""Shaped to match the ``ghp_<36 chars>`` pattern our redactor detects, built from an
+obviously-fake fill string rather than random-looking characters so it reads as
+synthetic to a human reviewer and does not need rotating — it was never live.
+"""
+
 PRIVATE_VALUE = "hunter2-super-secret-database-password-value"
 
 

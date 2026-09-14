@@ -14,7 +14,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cyberops_kit.advisors.errors import ProviderNotAvailableError, UnredactedPayloadError
+from cyberops_kit.advisors.errors import (
+    ProviderError,
+    ProviderNotAvailableError,
+    UnredactedPayloadError,
+)
 from cyberops_kit.advisors.providers import (
     DEFAULT_PROVIDER,
     PROVIDERS,
@@ -167,3 +171,47 @@ async def test_local_provider_reports_an_unreachable_daemon_clearly():
     with pytest.raises(ProviderNotAvailableError) as exc:
         await provider.complete(request)
     assert "ollama serve" in (exc.value.remediation or "").lower()
+
+
+# --- Scheme validation -------------------------------------------------------------
+#
+# `host` is a hardcoded default today, not exposed through config or the CLI. These
+# tests exist anyway: `urllib.request.urlopen` honors `file://` and other non-HTTP
+# schemes, so if `host` is ever made configurable, a value that reaches urlopen
+# unchecked could read arbitrary local files instead of talking to a daemon. Fixing
+# it now, before it is reachable, is the same standard the project holds everything
+# else to — a finding does not need to be exploitable today to be worth closing.
+
+
+@pytest.mark.asyncio
+async def test_local_provider_refuses_a_file_scheme_host():
+    """A file:// host must never reach urlopen."""
+    provider = LocalProvider(host="file:///etc/passwd")
+    request = CompletionRequest(system="s", user="u", model_id="m", redacted=True)
+
+    with pytest.raises(ProviderError, match=r"(?i)non-http"):
+        await provider.complete(request)
+
+
+def test_local_provider_availability_check_also_refuses_a_file_scheme_host():
+    """The health-check path is a separate urlopen call and needs its own guard."""
+    usable, reason = LocalProvider(host="file:///etc/passwd").available()
+
+    assert usable is False
+    assert "http" in reason.lower()
+
+
+@pytest.mark.parametrize("scheme", ["ftp", "gopher", "data"])
+def test_local_provider_refuses_other_non_http_schemes(scheme):
+    """http/https only — not just file:// specifically."""
+    usable, reason = LocalProvider(host=f"{scheme}://example.com").available()
+
+    assert usable is False
+    assert scheme in reason
+
+
+def test_local_provider_accepts_https():
+    """The guard is an allowlist of http/https, not a denylist of file://."""
+    from cyberops_kit.advisors.providers.local import _assert_http_scheme
+
+    _assert_http_scheme("https://example.com/api/tags")  # must not raise

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Final
 
@@ -38,6 +39,29 @@ logger = structlog.get_logger(__name__)
 DEFAULT_HOST: Final = "http://localhost:11434"
 DEFAULT_MODEL: Final = "llama3.1:8b"
 _HEALTH_TIMEOUT_SECONDS: Final = 2.0
+_ALLOWED_SCHEMES: Final = frozenset({"http", "https"})
+
+
+def _assert_http_scheme(url: str) -> None:
+    """Refuse to open anything but an ``http``/``https`` URL.
+
+    ``urllib.request.urlopen`` honors ``file://`` and other non-HTTP schemes, which
+    would let a value controlling ``host`` read arbitrary local files instead of
+    talking to a daemon. ``host`` is a hardcoded default today, not exposed through
+    config or the CLI — but this is the same posture the project holds everything
+    else to: not exploitable *yet* is not the same as safe, and the fix is cheap
+    enough that "wait until it's reachable" isn't a good trade.
+
+    Args:
+        url: The fully-built URL about to be opened.
+
+    Raises:
+        ValueError: The URL's scheme is not ``http`` or ``https``.
+    """
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme not in _ALLOWED_SCHEMES:
+        msg = f"refusing to open non-HTTP URL scheme {scheme!r} (from {url!r})"
+        raise ValueError(msg)
 
 
 class LocalProvider:
@@ -66,9 +90,11 @@ class LocalProvider:
         Returns:
             ``(True, "")`` when the daemon answers, else ``(False, reason)``.
         """
+        url = f"{self._host}/api/tags"
         try:
-            with urllib.request.urlopen(  # noqa: S310 - fixed http scheme, operator-supplied host
-                f"{self._host}/api/tags", timeout=_HEALTH_TIMEOUT_SECONDS
+            _assert_http_scheme(url)
+            with urllib.request.urlopen(  # noqa: S310 - scheme checked just above
+                url, timeout=_HEALTH_TIMEOUT_SECONDS
             ) as response:
                 if response.status == 200:
                     return True, ""
@@ -77,6 +103,8 @@ class LocalProvider:
             return False, (
                 f"no Ollama daemon reachable at {self._host} ({exc}). Start it with `ollama serve`."
             )
+        except ValueError as exc:
+            return False, str(exc)
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         """Perform one local inference call.
@@ -148,12 +176,17 @@ async def _post_json(url: str, body: bytes, *, timeout: float, provider: str) ->
         The decoded response mapping.
 
     Raises:
+        ProviderError: The URL scheme was not http/https, or the endpoint returned a
+            non-JSON or non-mapping body.
         ProviderNotAvailableError: The endpoint was unreachable.
-        ProviderError: The endpoint returned a non-JSON or non-mapping body.
     """
+    try:
+        _assert_http_scheme(url)
+    except ValueError as exc:
+        raise ProviderError(provider, str(exc)) from exc
 
     def _send() -> bytes:
-        request = urllib.request.Request(  # noqa: S310 - fixed http scheme
+        request = urllib.request.Request(  # noqa: S310 - scheme checked above
             url, data=body, headers={"Content-Type": "application/json"}, method="POST"
         )
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
