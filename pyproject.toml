@@ -37,6 +37,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Phase 2 advisory layer. Deliberately an extra, not a base dependency: the
+# deterministic core must never grow supply chain surface for an optional feature
+# that is off by default. `pip install cyberops-kit` pulls neither SDK, and the
+# local (Ollama) provider needs neither — it speaks HTTP via the standard library,
+# so air-gapped users get triage with zero added dependencies.
+#   anthropic - Anthropic provider (advisors/providers/anthropic.py).
+#   openai    - OpenAI provider (advisors/providers/openai.py).
+ai = [
+    "anthropic>=0.40",
+    "openai>=1.40",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -104,6 +115,14 @@ files = ["src/cyberops_kit"]
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
+
+# Optional AI provider SDKs. They live behind the `ai` extra and are imported
+# lazily inside the provider that needs them, so a base install — and a base CI
+# job — has neither on the path. Without this, `mypy --strict` fails on a
+# dependency the deterministic core deliberately does not carry.
+[[tool.mypy.overrides]]
+module = ["anthropic.*", "openai.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

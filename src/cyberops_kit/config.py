@@ -198,6 +198,21 @@ class AISettings(BaseModel):
     model: str | None = None
     max_findings: int = Field(default=25, gt=0, le=1000)
     redact: bool = True
+    timeout_seconds: float = Field(default=300.0, gt=0, le=3600)
+    """Per-inference-call budget.
+
+    300s by default, well above a typical hosted-API timeout, because the local
+    provider is a first-class citizen. This is not a guess: measured against a real
+    Ollama daemon running a 14B model on mixed CPU/GPU (33%/67% split, a common
+    laptop configuration), a single triage call took 195s on its own. 300s leaves
+    headroom for a longer real prompt and a slower machine without being so generous
+    that a genuinely hung request goes unnoticed for an hour.
+
+    Configurable because this is still a machine- and model-dependent number — a
+    fast GPU host clears it in a few seconds; an even slower CPU-only laptop may need
+    to raise it further. Bounded well below the scanner ceiling: an AI request
+    hanging must never be mistaken for a scanner hang.
+    """
 
     @field_validator("redact")
     @classmethod

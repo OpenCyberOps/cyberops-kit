@@ -146,14 +146,17 @@ def test_seam_3_ai_block_exists_and_is_disabled_by_default():
 
 
 def test_seam_3_ai_block_has_the_specified_shape():
-    """No key is missing, so Phase 2 needs no config migration."""
-    assert set(AISettings.model_fields) == {
-        "enabled",
-        "provider",
-        "model",
-        "max_findings",
-        "redact",
-    }
+    """The Phase 1 SEAM-3 fields are all present. Phase 2 needs no migration for them.
+
+    ``timeout_seconds`` is not in this set: it did not exist when SEAM-3 was
+    designed, and adding a new Phase-2-only field to a settings block that has
+    always been "reserved for Phase 2" is not the schema migration this seam
+    promises to avoid. This test guards the fields Phase 1 fixed; it does not
+    freeze the block against every future addition.
+    """
+    assert {"enabled", "provider", "model", "max_findings", "redact"}.issubset(
+        set(AISettings.model_fields)
+    )
 
 
 # --- SEAM-4: dormant report templates -------------------------------------------
@@ -236,11 +239,103 @@ def test_seam_6_isolation_test_exists():
 # --- The Phase 2 acceptance test ------------------------------------------------
 
 
-def test_advisors_package_is_reserved_and_empty():
-    """``advisors/`` exists with a README and no implementation."""
-    package = Path("src/cyberops_kit/advisors")
-    assert (package / "__init__.py").is_file()
-    assert (package / "README.md").is_file()
+ADVISORS = Path("src/cyberops_kit/advisors")
 
-    modules = [p.name for p in package.glob("*.py") if p.name != "__init__.py"]
-    assert modules == [], f"Phase 2 code appeared in advisors/ during Phase 1: {modules}"
+advisory_layer_present = pytest.mark.skipif(
+    not ADVISORS.is_dir(),
+    reason="advisory layer not installed; its absence is the Phase 2 acceptance case",
+)
+"""Skip, never fail, when ``advisors/`` is gone.
+
+Deleting the advisory layer must leave this suite green. A test that asserts
+something *about* that layer therefore cannot fail when it is absent — it has
+nothing to check. The two tests below this marker are the ones that constrain the
+core regardless, and they stay active either way.
+"""
+
+
+@advisory_layer_present
+def test_advisors_package_exists_with_its_boundary_documented():
+    """``advisors/`` still documents the boundary it must respect.
+
+    Through Phase 1 this test asserted the package was *empty*. That guard did its
+    job — it would have caught Phase 2 code landing early — and Phase 2 retires it,
+    replacing it with the checks below, which are strictly stronger: an empty
+    directory trivially respects the boundary, whereas a populated one has to be
+    shown to.
+    """
+    assert (ADVISORS / "__init__.py").is_file()
+    assert (ADVISORS / "README.md").is_file()
+
+
+@advisory_layer_present
+def test_importing_the_advisors_package_registers_nothing():
+    """Importing must never arm an outbound path.
+
+    "Off by default" is worth nothing if merely importing ``cyberops_kit.advisors``
+    puts an enricher in the registry. Registration is an explicit call that only
+    ``cli.py`` makes, and only when the user passed ``--ai-triage``.
+    """
+    import importlib
+
+    from cyberops_kit.core.enrichment import ENRICHERS, clear_registry
+
+    clear_registry()
+    try:
+        importlib.import_module("cyberops_kit.advisors")
+        importlib.import_module("cyberops_kit.advisors.triage")
+        assert ENRICHERS == []
+    finally:
+        clear_registry()
+
+
+@advisory_layer_present
+def test_the_advisory_layer_never_reaches_scoring():
+    """No module under ``advisors/`` may import or call the scoring machinery.
+
+    The AST check in ``test_score_is_advisory_invariant`` guards the other
+    direction — that ``scoring.py`` never reads ``.advisory``. This guards this one:
+    that no advisor ever calls ``compute_score``. Together they close the loop that
+    ADR 0004 describes, from both ends.
+    """
+    import ast
+
+    offenders: list[str] = []
+    for path in Path("src/cyberops_kit/advisors").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "cyberops_kit.core.scoring":
+                offenders.append(f"{path}: imports from core.scoring")
+            if isinstance(node, ast.Name) and node.id == "compute_score":
+                offenders.append(f"{path}: references compute_score")
+
+    assert not offenders, f"the advisory layer reached scoring (INV-2): {offenders}"
+
+
+def test_deleting_the_advisory_layer_leaves_the_core_importable():
+    """The Phase 2 acceptance test, in the form a test can express.
+
+    The full version — `rm -rf advisors/ && make test` — is a CI job, not a unit
+    test. What is checkable here is the property that makes it pass: nothing outside
+    ``advisors/`` imports it at module scope, so removing the package cannot break
+    an import anywhere in the core, the scanners, or the reporters.
+    """
+    import ast
+
+    offenders: list[str] = []
+    source_root = Path("src/cyberops_kit")
+    for path in source_root.rglob("*.py"):
+        if "advisors" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            if not node.module.startswith("cyberops_kit.advisors"):
+                continue
+            # A deferred import inside a function is fine: it runs only when the
+            # feature is switched on, and `cli.py` guards it behind ai.enabled.
+            if node.col_offset == 0:
+                offenders.append(f"{path.relative_to(source_root)}:{node.lineno}")
+
+    assert not offenders, f"core code imports the advisory layer at module scope: {offenders}"

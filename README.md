@@ -175,20 +175,28 @@ ai:
 
 ## The AI boundary
 
-An optional AI advisory layer is planned for Phase 2 (v1.1.0+). Its boundary is
-fixed now, before any of it is written:
+Phase 2 (v1.1.0+) adds an optional AI advisory layer that annotates findings with an
+exploitability assessment. Its boundary was fixed before any of it was written, and
+the implementation is held to it structurally, not just by policy:
 
-| The deterministic core does | The AI layer will do |
+| The deterministic core does | The AI layer does |
 |---|---|
 | Detect findings | Explain findings |
 | Assign severity | Suggest a fix |
 | Compute the score | — |
 | Determine pass/fail | — |
 
-**The AI layer annotates. It never grades.** It is off by default, it is disabled
-entirely by `--offline`, and removing it must leave the score, the grade, the SARIF
-output, and the CI exit code bit-for-bit identical. That last property is enforced by
-`tests/invariants/test_score_is_advisory_invariant.py`, which exists today.
+**The AI layer annotates. It never grades.** It is off by default (`--ai-triage` to
+enable), it is disabled entirely by `--offline`, and removing it leaves the score, the
+grade, the SARIF output, and the CI exit code bit-for-bit identical. That last property
+is enforced by `tests/invariants/test_score_is_advisory_invariant.py`.
+
+**[Read the full explanation — what gets sent, what's redacted, how to turn it on, and
+how it's labeled in every output format.](docs/ai-advisory.md)**
+
+Quality is not yet independently measured; see
+[the eval methodology](docs/methodology/ai-advisory-evals.md) for what's published so
+far and what isn't yet.
 
 ---
 

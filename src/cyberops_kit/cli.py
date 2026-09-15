@@ -25,7 +25,7 @@ import typer
 
 from cyberops_kit import __version__
 from cyberops_kit.config import load_settings
-from cyberops_kit.core.errors import CyberOpsError, ExitCode
+from cyberops_kit.core.errors import ConfigError, CyberOpsError, ExitCode
 from cyberops_kit.core.ingest import ingest
 from cyberops_kit.core.models import Report, Severity
 from cyberops_kit.core.orchestrator import Pipeline
@@ -107,6 +107,27 @@ def scan(
     pr_comment: Annotated[
         bool, typer.Option("--pr-comment", help="Also write a PR comment markdown file.")
     ] = False,
+    ai_triage: Annotated[
+        bool,
+        typer.Option(
+            "--ai-triage",
+            help="Annotate findings with an AI exploitability assessment. Never affects the score.",
+        ),
+    ] = False,
+    ai_provider: Annotated[
+        str | None,
+        typer.Option("--ai-provider", help="Inference provider: local, anthropic, openai."),
+    ] = None,
+    ai_model: Annotated[
+        str | None, typer.Option("--ai-model", help="Model ID to use for AI triage.")
+    ] = None,
+    ai_timeout: Annotated[
+        float | None,
+        typer.Option(
+            "--ai-timeout",
+            help="Per-finding inference timeout in seconds. Raise this for a local model.",
+        ),
+    ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Debug logging.")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Errors only.")] = False,
 ) -> None:
@@ -114,6 +135,13 @@ def scan(
     _configure_logging(verbose, quiet)
 
     overrides: dict[str, object] = {"offline": offline or None}
+    if ai_triage or ai_provider or ai_model or ai_timeout:
+        overrides["ai"] = {
+            "enabled": ai_triage or None,
+            "provider": ai_provider,
+            "model": ai_model,
+            "timeout_seconds": ai_timeout,
+        }
     if formats or output:
         overrides["output"] = {
             "formats": list(formats) if formats else None,
@@ -131,11 +159,30 @@ def scan(
         }
 
     try:
+        # INV-6 is absolute, so this combination is a usage error rather than a
+        # warning. Checked here as well as in the config validator so the message
+        # names the two flags the user actually typed.
+        if offline and ai_triage:
+            raise ConfigError(
+                "--offline cannot be combined with --ai-triage",
+                remediation=(
+                    "Offline mode disables every outbound network call (INV-6). "
+                    "Drop one of the two flags."
+                ),
+            )
+
         settings = load_settings(
             config_path=config,
             search_from=Path(target) if Path(target).is_dir() else Path.cwd(),
             overrides=overrides,
         )
+
+        if settings.ai.enabled:
+            # Registration is explicit and late: importing cyberops_kit must never
+            # arm an outbound path on its own.
+            from cyberops_kit.advisors import register_enrichers
+
+            register_enrichers()
 
         with ingest(target, offline=settings.offline) as (workspace, resolved_target):
             if resolved_target.dirty:
