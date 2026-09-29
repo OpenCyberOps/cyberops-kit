@@ -8,6 +8,8 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-29
+
 ### Added
 
 - **Deterministic core pipeline**: `ingest → detect → scan → normalize → enrich →
@@ -58,4 +60,5 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 - Semgrep's `--config=auto` ruleset is not pinned, so static analysis scores can
   move between runs on an unchanged commit.
 
-[Unreleased]: https://github.com/OpenCyberOps/cyberops-kit/commits/main
+[Unreleased]: https://github.com/OpenCyberOps/cyberops-kit/compare/v0.1.0...main
+[0.1.0]: https://github.com/OpenCyberOps/cyberops-kit/releases/tag/v0.1.0
