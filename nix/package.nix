@@ -33,15 +33,22 @@ let
   pyproject = lib.importTOML ../pyproject.toml;
 
   # git is required by ingest regardless of which scanners run.
-  scanners = lib.filter (lib.meta.availableOn stdenv.hostPlatform) [
-    scorecard
-    osv-scanner
-    gitleaks
-    syft
-    trivy
-    semgrep
-    slsa-verifier
-  ];
+  scanners = lib.filter (lib.meta.availableOn stdenv.hostPlatform) (
+    # nixpkgs' scorecard 5.5.0 does not build on Darwin: its Go vendor directory
+    # hashes differently there (fixed-output hash mismatch). We leave it out rather
+    # than ship a package that cannot build. CyberOps Kit then reports Scorecard as
+    # not run and excludes its dimension instead of scoring it zero (ADR 0006).
+    # Remove this condition once nixpkgs fixes the Darwin build.
+    lib.optional (!stdenv.hostPlatform.isDarwin) scorecard
+    ++ [
+      osv-scanner
+      gitleaks
+      syft
+      trivy
+      semgrep
+      slsa-verifier
+    ]
+  );
   runtimePath = [ git ] ++ lib.optionals withScanners scanners;
 in
 python3Packages.buildPythonApplication {
