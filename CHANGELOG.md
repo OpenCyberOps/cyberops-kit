@@ -10,6 +10,12 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 
 ### Added
 
+- **Nix flake and NixOS module.** Running `nix run github:OpenCyberOps/cyberops-kit`
+  gives you `cyberops` with all seven scanners pinned by `flake.lock`. The flake
+  also provides `-minimal` and `-ai` variants, an overlay, a
+  `programs.cyberops-kit` NixOS module, a `nix develop` shell, and a non-flake
+  `default.nix`. Building the package runs the unit tests and every `INV-*`
+  invariant, and the new `Nix` CI workflow builds it on Linux and macOS.
 - **Deterministic core pipeline**: `ingest → detect → scan → normalize → enrich →
   score → report`.
 - **Canonical data model** (`core/models.py`) including the fully-specified
