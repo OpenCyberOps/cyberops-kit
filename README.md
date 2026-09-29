@@ -4,11 +4,17 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
+[![Security report card](https://img.shields.io/endpoint?url=https%3A%2F%2Fopencyberops.github.io%2Fcyberops-kit%2Freport%2Fbadge.json)](https://opencyberops.github.io/cyberops-kit/report/)
 [![Nix flake](https://img.shields.io/badge/nix-flake-5277C3.svg?logo=nixos&logoColor=white)](#nix-and-nixos)
 
 CyberOps Kit analyzes a software project, orchestrates the OpenSSF tool ecosystem,
 evaluates supply chain posture against SLSA, generates SBOMs, and produces a
 security report card you can hand to an auditor.
+
+**We grade ourselves in public.** Every push to `main` runs CyberOps Kit against this
+repository and publishes the [full report card](https://opencyberops.github.io/cyberops-kit/report/)
+and its [trend over time](https://opencyberops.github.io/cyberops-kit/report/trend.html),
+whatever the result. The security badge above comes from that report.
 
 > **On Nix or NixOS? One command gets you the whole toolchain.**
 >

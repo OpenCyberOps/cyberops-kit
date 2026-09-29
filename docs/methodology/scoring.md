@@ -7,7 +7,7 @@ a score. It is maintained under INV-7: any change to scoring behavior updates th
 document *in the same commit* and bumps `SCORING_MODEL_VERSION`.
 
 A security score nobody can audit is worthless. Everything below is implemented in
-[`src/cyberops_kit/core/scoring.py`](../../src/cyberops_kit/core/scoring.py), and
+[`src/cyberops_kit/core/scoring.py`](https://github.com/OpenCyberOps/cyberops-kit/blob/main/src/cyberops_kit/core/scoring.py), and
 the numbers here are the numbers in the code.
 
 ---

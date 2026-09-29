@@ -41,6 +41,17 @@ jobs:
       - name: Report scanner availability
         run: cyberops doctor
 
+      # The trend dashboard needs past runs, and each CI run starts empty. On main,
+      # seed the history index from the published site so this run adds to it.
+      # It is trend data only: nothing in it reaches the score (INV-1).
+      - name: Restore published history
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          mkdir -p .cyberops/history
+          curl -sSfL --max-time 30 -o .cyberops/history/index.json \
+            "https://opencyberops.github.io/cyberops-kit/report/history/index.json" \
+            || { echo "No published history yet; starting a new series."; rm -f .cyberops/history/index.json; }
+
       - name: Scan
         id: scan
         env:
@@ -65,3 +76,53 @@ jobs:
 
       - name: Publish the summary
         run: cat .cyberops/report.md >> "$GITHUB_STEP_SUMMARY"
+
+  # Publishes our own report card, including when it is unflattering: the docs site
+  # at /, the latest report at /report/, the trend at /report/trend.html, and the
+  # shields.io endpoint at /report/badge.json that the README badge reads.
+  publish:
+    name: Publish report card and docs
+    needs: scan
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}report/
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Build the docs
+        run: |
+          python -m pip install ".[docs]"
+          python -m mkdocs build --strict --site-dir _site
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: security-report
+          path: _site/report/
+
+      - name: Assemble the report card
+        run: |
+          set -euo pipefail
+          cd _site/report
+          test -s report.html && test -s badge.json
+          cp report.html index.html
+          cp ../../dashboard/index.html trend.html
+          rm -f pr-comment.md
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site/
+
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
