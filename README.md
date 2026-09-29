@@ -134,7 +134,10 @@ nix-env -f https://github.com/OpenCyberOps/cyberops-kit/archive/main.tar.gz -i
 | `#cyberops-kit-minimal` | `cyberops` only. It uses whatever scanners are already on your `PATH`, the same as `pip install`. |
 | `#cyberops-kit-ai` | Everything above, plus the Anthropic and OpenAI SDKs for the optional [AI advisory layer](#the-ai-boundary). On NixOS, set `programs.cyberops-kit.withAI = true;`. |
 
-Supported platforms are `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`.
+Supported platforms are `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`. On
+macOS, Scorecard is currently left out because nixpkgs' Scorecard package fails to
+build there. The other six scanners are included. The report shows Scorecard as
+**not run** and leaves its dimension out of the score, rather than scoring it zero.
 
 Some things still depend on your environment:
 
