@@ -26,22 +26,17 @@ jobs:
         with:
           fetch-depth: 0       # Gitleaks needs full history
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
 
-      - run: python -m pip install -e .
-
-      - name: Install scanners
+      # CyberOps Kit and every scanner come from this repository's own flake. Each
+      # tool is pinned in flake.lock and hash-verified by Nix, so there is no
+      # `curl | sh` and no `@latest`. The tool versions in the published report
+      # change only when a reviewed flake.lock update changes them. This is the
+      # package our users install, so it is the one we scan with.
+      - name: Install CyberOps Kit and scanners
         run: |
-          set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
-          go install github.com/ossf/scorecard/v5@latest
-          go install github.com/zricethezav/gitleaks/v8@latest
-          python -m pip install semgrep
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          nix build .#default --out-link "$RUNNER_TEMP/cyberops-kit"
+          echo "$RUNNER_TEMP/cyberops-kit/bin" >> "$GITHUB_PATH"
 
       - name: Report scanner availability
         run: cyberops doctor
@@ -64,6 +59,9 @@ jobs:
         with:
           name: security-report
           path: .cyberops/
+          # upload-artifact skips dot-directories by default, and it did: every
+          # earlier run uploaded nothing.
+          include-hidden-files: true
 
       - name: Publish the summary
         run: cat .cyberops/report.md >> "$GITHUB_STEP_SUMMARY"
