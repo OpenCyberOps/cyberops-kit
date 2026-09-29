@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Let a new release age a week before proposing it. Freshly published
+    # versions are when a hijacked package is most likely to still be live.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels: [dependencies]
     commit-message:
@@ -13,6 +17,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels: [dependencies, ci]
     commit-message:
       prefix: "ci"
@@ -21,6 +27,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     labels: [dependencies, docker]
     commit-message:
       prefix: "chore"

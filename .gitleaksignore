@@ -1,0 +1,15 @@
+# Gitleaks findings reviewed by a maintainer and shown to be false positives.
+#
+# Every line needs evidence next to it. "It is only a test" is not evidence: tests
+# have leaked real credentials before. Anything added here stays in the public repo,
+# where anyone auditing our report card can read it.
+
+# tests/advisors/test_redaction_enforcement.py, commit 0c03dfe (since rewritten at
+# HEAD to build the value at runtime). The literal "ghp_" string in that commit is
+# a hand-made test pattern, not a GitHub token, for two checkable reasons:
+#   1. It has 38 characters after "ghp_". Real classic PATs have exactly 36
+#      (30 random + a 6-character base62 CRC32 checksum).
+#   2. The checksum on its first 36 characters does not verify.
+# It sat beside AWS's documented example key, AKIAIOSFODNN7EXAMPLE, as input to
+# the redaction tests. Gitleaks scans history, so the old commit still matches.
+0c03dfe7771855e3162b1c0f4af8f50fe55b1721:tests/advisors/test_redaction_enforcement.py:github-pat:29
