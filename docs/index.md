@@ -13,6 +13,9 @@ security report card you can hand to an auditor.
 
 ## Start here
 
+- **[Our own report card](https://opencyberops.github.io/cyberops-kit/report/)**: CyberOps
+  Kit scans itself on every push to `main` and publishes the result here, whether or
+  not it is flattering. See also the [score trend](https://opencyberops.github.io/cyberops-kit/report/trend.html).
 - **[Scoring methodology](methodology/scoring.md)** — the complete formula, weights,
   grade bands, hard caps, and known limitations. Published in full, because a
   security score nobody can audit is worthless.

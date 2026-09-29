@@ -22,8 +22,11 @@ theme:
 
 nav:
   - Home: index.md
+  - Our report card: https://opencyberops.github.io/cyberops-kit/report/
   - Methodology:
       - Scoring: methodology/scoring.md
+      - AI advisory evals: methodology/ai-advisory-evals.md
+  - AI advisory layer: ai-advisory.md
   - Contributing:
       - Add a scanner: contributing/add-a-scanner.md
   - Decisions:
