@@ -1,0 +1,42 @@
+name: Nix
+
+# Builds the flake on every change, so `nix run github:OpenCyberOps/cyberops-kit`
+# never breaks silently. The package build runs the unit tests and every INV-*
+# invariant inside the Nix sandbox.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake:
+    name: Flake check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # Packages (with tests), the NixOS module evaluation on Linux, and formatting.
+      - run: nix flake check -L
+      - run: nix fmt -- --check flake.nix default.nix nix/package.nix nix/module.nix
+
+      # The installed CLI must find every bundled scanner on its own PATH.
+      - name: Smoke test
+        run: |
+          nix run . -- version
+          nix run . -- doctor
+
+      # Non-flake users go through default.nix; keep that path building too.
+      - run: nix-build --no-out-link

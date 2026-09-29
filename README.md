@@ -4,10 +4,21 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
+[![Nix flake](https://img.shields.io/badge/nix-flake-5277C3.svg?logo=nixos&logoColor=white)](#nix-and-nixos)
 
 CyberOps Kit analyzes a software project, orchestrates the OpenSSF tool ecosystem,
 evaluates supply chain posture against SLSA, generates SBOMs, and produces a
 security report card you can hand to an auditor.
+
+> **On Nix or NixOS? One command gets you the whole toolchain.**
+>
+> ```bash
+> nix run github:OpenCyberOps/cyberops-kit -- scan .
+> ```
+>
+> That fetches CyberOps Kit together with all seven scanners, each pinned to an
+> exact version in `flake.lock`. You don't need pip or Docker, and you don't have to
+> assemble a toolchain. [More below](#nix-and-nixos).
 
 ---
 
@@ -46,13 +57,102 @@ These are structural, not aspirational. Each is enforced by a test in
 
 ## Install
 
+### Nix and NixOS
+
+This is the quickest way to get the full toolchain. The flake ships `cyberops` with
+every scanner it orchestrates already on its `PATH`: Scorecard, OSV-Scanner,
+Semgrep, Gitleaks, Trivy, Syft, and slsa-verifier. `flake.lock` pins all of them.
+
+```bash
+# Run it once, without installing anything
+nix run github:OpenCyberOps/cyberops-kit -- scan .
+
+# Install it into your profile
+nix profile install github:OpenCyberOps/cyberops-kit
+cyberops doctor        # every scanner reports "available"
+```
+
+Why Nix suits this tool:
+
+- **Complete.** Nothing is left for you to install by hand, so no dimension drops
+  out of the score just because a binary is missing on this machine.
+- **Reproducible.** A given flake revision always resolves to the same scanner
+  versions on every machine, and each version is recorded in `run_metadata`. The
+  vulnerability databases those scanners download still change as new advisories
+  are published, which is what they are supposed to do.
+- **Tested as it is built.** Building the package runs the unit tests and every
+  `INV-*` invariant guard inside the Nix sandbox. A build that breaks determinism
+  or redaction fails.
+- **Clean.** Nothing is installed globally, and removing it from your profile
+  removes all of it.
+
+**NixOS system configuration.** Add the flake as an input and enable the module:
+
+```nix
+{
+  inputs.cyberops-kit.url = "github:OpenCyberOps/cyberops-kit";
+
+  outputs = { nixpkgs, cyberops-kit, ... }: {
+    nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        cyberops-kit.nixosModules.default
+        { programs.cyberops-kit.enable = true; }
+      ];
+    };
+  };
+}
+```
+
+The module installs the CLI and does nothing else. It adds no service, no timer,
+and no listener.
+
+**home-manager or an overlay.** Both expose it as `pkgs.cyberops-kit`:
+
+```nix
+nixpkgs.overlays = [ cyberops-kit.overlays.default ];
+home.packages = [ pkgs.cyberops-kit ];
+```
+
+**Without flakes.** `default.nix` pins nixpkgs to the same revision as `flake.lock`:
+
+```bash
+nix-env -f https://github.com/OpenCyberOps/cyberops-kit/archive/main.tar.gz -i
+```
+
+**Variants**
+
+| Output | Contents |
+|---|---|
+| `#default` | `cyberops` and every scanner |
+| `#cyberops-kit-minimal` | `cyberops` only. It uses whatever scanners are already on your `PATH`, the same as `pip install`. |
+| `#cyberops-kit-ai` | Everything above, plus the Anthropic and OpenAI SDKs for the optional [AI advisory layer](#the-ai-boundary). On NixOS, set `programs.cyberops-kit.withAI = true;`. |
+
+Supported platforms are `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`.
+
+Some things still depend on your environment:
+
+- Scorecard still needs a [GitHub token](#scorecard-needs-a-github-token).
+- OSV-Scanner, Trivy, and Semgrep fetch vulnerability data or rules at run time
+  unless you pass `--offline`.
+- Sandboxed stages ([INV-5](#design-commitments)) need a container runtime from
+  the system, such as `virtualisation.docker.enable = true;` or
+  `virtualisation.podman.enable = true;`.
+- If you set `inputs.cyberops-kit.inputs.nixpkgs.follows = "nixpkgs"`, the scanner
+  versions come from *your* nixpkgs, not ours. That works, but you lose the pinned
+  set that this repository's CI builds and tests.
+
+### pip
+
 ```bash
 pip install cyberops-kit
 ```
 
 `pip install` gives you the orchestrator. The external scanners are separate
-binaries — install the ones you want, or use the container image, which bundles all
-of them:
+binaries. Install the ones you want, or use Nix (above) or the container image,
+both of which bundle all of them.
+
+### Container
 
 ```bash
 docker run --rm -v "$PWD:/workspace" ghcr.io/opencyberops/cyberops-kit scan /workspace
@@ -216,6 +316,9 @@ make test        # pytest
 make invariants  # the INV-* guards — run before every commit
 make selfscan    # run CyberOps Kit against itself
 ```
+
+On Nix, `nix develop` opens a shell with the Python toolchain and every scanner
+already present. Skip `make install` and run the other targets directly.
 
 ---
 

@@ -19,6 +19,10 @@ htmlcov/
 .cyberops/
 site/
 
+# Nix build output symlinks
+result
+result-*
+
 # Internal build-instruction and planning documents. These guide how the project is
 # built; they are not part of what it ships. Kept locally, never pushed.
 CLAUDE.md
